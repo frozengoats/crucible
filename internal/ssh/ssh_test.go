@@ -22,6 +22,7 @@ const (
 	AgentUnixSocketDir     string = "/tmp/sshtest"
 	ContainerUnixSocketDir string = "/etc/sshtest"
 	SshPort                string = "22"
+	KnownHostsFile         string = "/tmp/sshtest/known_hosts"
 )
 
 var (
@@ -103,6 +104,11 @@ func (suite *SshTestSuite) SetupTest() {
 
 	err = InitAgentInstance(WithSshAuthSock(filepath.Join(AgentUnixSocketDir, "agent.sock")))
 	suite.NoError(err)
+
+	err = os.WriteFile(KnownHostsFile, []byte{}, 0600)
+	suite.NoError(err)
+	err = InitializeKnownHosts(WithKnownHostsFile(KnownHostsFile))
+	suite.NoError(err)
 }
 
 func (suite *SshTestSuite) TearDownTest() {
@@ -130,8 +136,23 @@ func (suite *SshTestSuite) TestUnknownHostAllow() {
 	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519"))
 	suite.NoError(err)
 
+	// allow the unknown host to be connected to
 	sshSession, err := NewSsh(suite.sshHost, "test", privKey, false, true)
-	// should fail b/c host is unknown and we don't allow for that
+	suite.NoError(err)
+	defer sshSession.Close()
+}
+
+func (suite *SshTestSuite) TestKnownHostNoProblem() {
+	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519"))
+	suite.NoError(err)
+
+	// allow the unknown host to be connected to, so that we can cache it in our known_hosts
+	sshSession, err := NewSsh(suite.sshHost, "test", privKey, false, true)
+	suite.NoError(err)
+	defer sshSession.Close()
+
+	// this time, fail if a host is unknown.  it should already be part of our known_hosts though, so it should pass
+	sshSession, err = NewSsh(suite.sshHost, "test", privKey, false, true)
 	suite.NoError(err)
 	defer sshSession.Close()
 }

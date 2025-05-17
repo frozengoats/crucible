@@ -132,9 +132,6 @@ func InitAgentInstance(options ...AgentOption) error {
 
 func GetAgentInstance() (*SshAgent, error) {
 	if agentInstance == nil {
-		agentLock.Lock()
-		defer agentLock.Unlock()
-
 		err := InitAgentInstance()
 		if err != nil {
 			return nil, err
