@@ -43,8 +43,9 @@ func (suite *SshTestSuite) SetupTest() {
 	suite.NoError(err)
 
 	req := testcontainers.ContainerRequest{
-		Image:      SshdImage,
-		WaitingFor: wait.ForFile("/home/test/done.file").WithStartupTimeout(10 * time.Second),
+		Image:           SshdImage,
+		AlwaysPullImage: true,
+		WaitingFor:      wait.ForFile("/home/test/done.file").WithStartupTimeout(10 * time.Second),
 		Files: []testcontainers.ContainerFile{
 			{
 				HostFilePath:      configScript,
@@ -81,8 +82,9 @@ func (suite *SshTestSuite) SetupTest() {
 
 	socketFile := filepath.Join(ContainerUnixSocketDir, "agent.sock")
 	req = testcontainers.ContainerRequest{
-		Image:      SshAgentImage,
-		WaitingFor: wait.ForFile(CompletionFile).WithStartupTimeout(10 * time.Second),
+		Image:           SshAgentImage,
+		AlwaysPullImage: true,
+		WaitingFor:      wait.ForFile(CompletionFile).WithStartupTimeout(10 * time.Second),
 		Env: map[string]string{
 			"COMPLETION_FILE": CompletionFile,
 			"SSH_AUTH_SOCK":   socketFile,

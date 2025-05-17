@@ -1,7 +1,10 @@
 #!/bin/sh
+set -e
 
 addgroup -S test
 adduser -S test -G test
+sed -i "s/^test:!:/test:\*/" /etc/shadow
+echo "test ALL=(ALL) ALL" >> /etc/sudoers
 
 mkdir -p /home/test/.ssh
 chmod 700 /home/test/.ssh
