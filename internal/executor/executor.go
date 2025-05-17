@@ -48,7 +48,7 @@ func (ex *Executor) Run() error {
 		return fmt.Errorf("unable to ascertain current user\n%w", err)
 	}
 
-	sshSession, err := ssh.NewSsh(ex.HostConfig.Host, u.Username, sshKeyPath, ex.Config.Executor.Ssh.IgnoreHostKeyChange, ex.Config.Executor.Ssh.AllowUnknownHosts)
+	sshSession, err := ssh.NewSsh(ex.HostConfig.Host, u.Username, sshKeyPath, ex.Config.Executor.Ssh.IgnoreHostKeyChange, ex.Config.Executor.Ssh.AllowUnknownHosts, ssh.NewTypedPassphraseProvider())
 	if err != nil {
 		return fmt.Errorf("unable to create ssh session for host id %s\n%w", ex.HostConfigName, err)
 	}
