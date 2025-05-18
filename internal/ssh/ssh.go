@@ -29,33 +29,38 @@ func GetPublicKey(keyFile string) (ssh.PublicKey, error) {
 	return pubKey, nil
 }
 
-func GetPrivateKeySigner(keyFile string, passphraseProvider PassphraseProvider) (ssh.Signer, error) {
+func GetPrivateKeySigner(keyFile string, passphraseProvider PassphraseProvider) (ssh.Signer, any, error) {
 	key, err := os.ReadFile(keyFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read key %s\n%w", keyFile, err)
+		return nil, nil, fmt.Errorf("unable to read key %s\n%w", keyFile, err)
 	}
 
 	signer, err := ssh.ParsePrivateKey(key)
 	if err == nil {
-		return signer, nil
+		return signer, nil, nil
 	}
 
 	if _, ok := err.(*ssh.PassphraseMissingError); !ok {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// this is now an indication that this key is locked with a passphrase
 	passPhrase, err := passphraseProvider.GetPassphrase()
 	if err != nil {
-		return nil, fmt.Errorf("unable to obtain passphrase\n%w", err)
+		return nil, nil, fmt.Errorf("unable to obtain passphrase\n%w", err)
 	}
 
 	signer, err = ssh.ParsePrivateKeyWithPassphrase(key, []byte(passPhrase))
 	if err != nil {
-		return nil, fmt.Errorf("unable to get signer from private key\n%w", err)
+		return nil, nil, fmt.Errorf("unable to get signer from private key\n%w", err)
 	}
 
-	return signer, nil
+	rawKey, err := ssh.ParseRawPrivateKeyWithPassphrase(key, []byte(passPhrase))
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to parse raw key from private key\n%w", err)
+	}
+
+	return signer, rawKey, nil
 }
 
 type SshSession struct {
@@ -75,7 +80,7 @@ func NewSsh(host string, username string, keyFile string, ignoreHostKeyChange bo
 	if err != nil {
 		// this means there's no ssh agent available
 		fmt.Printf("warning: %s\n", err.Error())
-		signer, err = GetPrivateKeySigner(keyFile, passphraseProvider)
+		signer, _, err = GetPrivateKeySigner(keyFile, passphraseProvider)
 		if err != nil {
 			return nil, err
 		}
@@ -92,12 +97,13 @@ func NewSsh(host string, username string, keyFile string, ignoreHostKeyChange bo
 				return nil, err
 			}
 		} else {
-			signer, err = GetPrivateKeySigner(keyFile, passphraseProvider)
+			var rawSigner any
+			signer, rawSigner, err = GetPrivateKeySigner(keyFile, passphraseProvider)
 			if err != nil {
 				return nil, err
 			}
 			authMethod = ssh.PublicKeys(signer)
-			err = sshAgent.AddSigner(signer)
+			err = sshAgent.AddPrivateKey(rawSigner)
 			if err != nil {
 				fmt.Printf("unable to add private key to ssh agent, but continuing\n%s\n", err.Error())
 			}

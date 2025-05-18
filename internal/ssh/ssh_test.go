@@ -171,7 +171,6 @@ func (suite *SshTestSuite) TestKeyWithPassphrase() {
 	// block entry with bad passphrase on locked private key
 	sshSession, err := NewSsh(suite.sshHost, "test", privKey, false, true, NewDefaultPassphraseProvider("badphrase"))
 	suite.Error(err)
-	defer sshSession.Close()
 
 	// admit entry once by providing the passphrase when prompted with the correct passphrase
 	sshSession, err = NewSsh(suite.sshHost, "test", privKey, false, true, NewDefaultPassphraseProvider(TestPassphrase))

@@ -65,12 +65,12 @@ func (a *SshAgent) GetAuthMethod() (ssh.AuthMethod, error) {
 	return ssh.PublicKeys(signers...), nil
 }
 
-func (a *SshAgent) AddSigner(signer ssh.Signer) error {
+func (a *SshAgent) AddPrivateKey(key any) error {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
 	err := a.client.Add(agent.AddedKey{
-		PrivateKey: signer,
+		PrivateKey: key,
 	})
 
 	if err != nil {
