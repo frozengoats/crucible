@@ -16,7 +16,7 @@ type SshConfig struct {
 
 type Executor struct {
 	Ssh                SshConfig `yaml:"ssh"`
-	SyncExecutionSteps bool      `yaml:"syncExecutionSteps"`
+	SyncExecutionSteps bool      `yaml:"syncExecutionSteps"` // if true, execution step must complete on all hosts before advancing
 }
 
 type HostConfig struct {

@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/frozengoats/crucible/internal/config"
+	"github.com/frozengoats/crucible/internal/sequence"
 	"github.com/frozengoats/crucible/internal/ssh"
 )
 
@@ -48,11 +49,21 @@ func (ex *Executor) Run() error {
 		return fmt.Errorf("unable to ascertain current user\n%w", err)
 	}
 
-	sshSession, err := ssh.NewSsh(ex.HostConfig.Host, u.Username, sshKeyPath, ex.Config.Executor.Ssh.IgnoreHostKeyChange, ex.Config.Executor.Ssh.AllowUnknownHosts, ssh.NewTypedPassphraseProvider())
+	sshSession := ssh.NewSsh(ex.HostConfig.Host, u.Username, sshKeyPath,
+		ssh.WithIgnoreHostKeyChangeOption(ex.Config.Executor.Ssh.IgnoreHostKeyChange),
+		ssh.WithAllowUnknownHostsOption(ex.Config.Executor.Ssh.AllowUnknownHosts),
+		ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),
+	)
 	if err != nil {
 		return fmt.Errorf("unable to create ssh session for host id %s\n%w", ex.HostConfigName, err)
 	}
 
+	s, err := sequence.LoadSequence(ex.SequencePath)
+	if err != nil {
+		return err
+	}
+
 	fmt.Println(sshSession)
+	fmt.Println(s)
 	return nil
 }

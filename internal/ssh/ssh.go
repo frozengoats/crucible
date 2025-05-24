@@ -11,6 +11,32 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+type SshOptions struct {
+	ignoreHostKeyChange bool
+	allowUnknownHosts   bool
+	passphraseProvider  PassphraseProvider
+}
+
+type SshConfigOption func(*SshOptions)
+
+func WithAllowUnknownHostsOption(allow bool) SshConfigOption {
+	return func(o *SshOptions) {
+		o.allowUnknownHosts = allow
+	}
+}
+
+func WithIgnoreHostKeyChangeOption(ignore bool) SshConfigOption {
+	return func(o *SshOptions) {
+		o.ignoreHostKeyChange = ignore
+	}
+}
+
+func WithPassphraseProviderOption(provider PassphraseProvider) SshConfigOption {
+	return func(s *SshOptions) {
+		s.passphraseProvider = provider
+	}
+}
+
 func GetPublicKey(keyFile string) (ssh.PublicKey, error) {
 	pubKeyFile := fmt.Sprintf("%s.pub", keyFile)
 	key, err := os.ReadFile(pubKeyFile)
@@ -64,15 +90,36 @@ func GetPrivateKeySigner(keyFile string, passphraseProvider PassphraseProvider) 
 }
 
 type SshSession struct {
-	HostIdent string
-	session   *ssh.Session
+	options  *SshOptions
+	client   *ssh.Client
+	host     string
+	username string
+	keyFile  string
 }
 
-func (s *SshSession) Close() {
-	_ = s.session.Close()
+func NewSsh(host string, username string, keyFile string, configOptions ...SshConfigOption) *SshSession {
+	options := &SshOptions{}
+	for _, o := range configOptions {
+		o(options)
+	}
+
+	return &SshSession{
+		host:     host,
+		username: username,
+		keyFile:  keyFile,
+		options:  options,
+	}
 }
 
-func NewSsh(host string, username string, keyFile string, ignoreHostKeyChange bool, allowUnknownHosts bool, passphraseProvider PassphraseProvider) (*SshSession, error) {
+func (s *SshSession) Close() error {
+	if s.client != nil {
+		return s.client.Conn.Close()
+	}
+
+	return nil
+}
+
+func (s *SshSession) Connect() error {
 	var signer ssh.Signer
 	var authMethod ssh.AuthMethod
 
@@ -80,38 +127,40 @@ func NewSsh(host string, username string, keyFile string, ignoreHostKeyChange bo
 	if err != nil {
 		// this means there's no ssh agent available
 		fmt.Printf("warning: %s\n", err.Error())
-		signer, _, err = GetPrivateKeySigner(keyFile, passphraseProvider)
+		signer, _, err = GetPrivateKeySigner(s.keyFile, s.options.passphraseProvider)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		authMethod = ssh.PublicKeys(signer)
 	} else {
-		pubKey, err := GetPublicKey(keyFile)
+		pubKey, err := GetPublicKey(s.keyFile)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		keyInAgent, err := sshAgent.KeyExists(pubKey)
 		if keyInAgent {
 			authMethod, err = sshAgent.GetAuthMethod()
 			if err != nil {
-				return nil, err
+				return err
 			}
 		} else {
 			var rawSigner any
-			signer, rawSigner, err = GetPrivateKeySigner(keyFile, passphraseProvider)
+			signer, rawSigner, err = GetPrivateKeySigner(s.keyFile, s.options.passphraseProvider)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			authMethod = ssh.PublicKeys(signer)
-			err = sshAgent.AddPrivateKey(rawSigner)
-			if err != nil {
-				fmt.Printf("unable to add private key to ssh agent, but continuing\n%s\n", err.Error())
+			if rawSigner != nil {
+				err = sshAgent.AddPrivateKey(rawSigner)
+				if err != nil {
+					fmt.Printf("unable to add private key to ssh agent, but continuing\n%s\n", err.Error())
+				}
 			}
 		}
 	}
 
 	sshConfig := &ssh.ClientConfig{
-		User: username,
+		User: s.username,
 		Auth: []ssh.AuthMethod{
 			authMethod,
 		},
@@ -126,29 +175,23 @@ func NewSsh(host string, username string, keyFile string, ignoreHostKeyChange bo
 
 			err = kh.Kh.HostKeyCallback()(hostname, remote, key)
 			if knownhosts.IsHostKeyChanged(err) {
-				if ignoreHostKeyChange {
+				if s.options.ignoreHostKeyChange {
 					return nil
 				}
 				return fmt.Errorf("host key has changed for %s", hostname)
 			}
 
 			if knownhosts.IsHostUnknown(err) {
-				if allowUnknownHosts {
-					f, ferr := os.OpenFile(kh.filename, os.O_APPEND|os.O_WRONLY, 0600)
+				if s.options.allowUnknownHosts {
+					ferr := kh.WriteKnownHost(hostname, remote, key)
 					if ferr != nil {
-						return fmt.Errorf("problem opening known_hosts file at %s\n%w", kh.filename, err)
-					}
-					defer f.Close()
-
-					ferr = knownhosts.WriteKnownHost(f, hostname, remote, key)
-					if ferr != nil {
-						return fmt.Errorf("unable to append host %s to known_hosts\n%w", hostname, err)
+						return ferr
 					}
 
 					return nil
 				}
 
-				return fmt.Errorf("host %s is not known in your known_hosts file, to remedy, ssh into the host manually", host)
+				return fmt.Errorf("host %s is not known in your known_hosts file, to remedy, ssh into the host manually", s.host)
 			}
 
 			return err
@@ -156,18 +199,17 @@ func NewSsh(host string, username string, keyFile string, ignoreHostKeyChange bo
 		Timeout: 10 * time.Second,
 	}
 
-	client, err := ssh.Dial("tcp", host, sshConfig)
+	client, err := ssh.Dial("tcp", s.host, sshConfig)
 	if err != nil {
-		return nil, fmt.Errorf("unable to establish ssh connection for %s\n%w", host, err)
+		return fmt.Errorf("unable to establish ssh connection for %s\n%w", s.host, err)
 	}
 
-	session, err := client.NewSession()
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("unable to establish ssh session for %s\n%w", host, err)
-	}
+	s.client = client
+	return nil
+}
 
-	return &SshSession{
-		session: session,
+func (s *SshSession) NewCmdSession() (*SshCmdSession, error) {
+	return &SshCmdSession{
+		client: s.client,
 	}, nil
 }

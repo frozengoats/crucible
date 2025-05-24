@@ -2,11 +2,13 @@ package ssh
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/skeema/knownhosts"
+	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -38,6 +40,37 @@ func (kh *SshKnownHosts) Lock() {
 
 func (kh *SshKnownHosts) Unlock() {
 	kh.lock.Unlock()
+}
+
+func (kh *SshKnownHosts) writeKnownHost(hostname string, remote net.Addr, key ssh.PublicKey) error {
+	f, err := os.OpenFile(kh.filename, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("problem opening known_hosts file at %s\n%w", kh.filename, err)
+	}
+	defer f.Close()
+
+	err = knownhosts.WriteKnownHost(f, hostname, remote, key)
+	if err != nil {
+		return fmt.Errorf("unable to append host %s to known_hosts\n%w", hostname, err)
+	}
+
+	return nil
+}
+
+func (kh *SshKnownHosts) WriteKnownHost(hostname string, remote net.Addr, key ssh.PublicKey) error {
+	err := kh.writeKnownHost(hostname, remote, key)
+	if err != nil {
+		return err
+	}
+
+	// reload the file after writing
+	khdb, err := knownhosts.NewDB(kh.filename)
+	if err != nil {
+		return fmt.Errorf("unable to load known_hosts file from %s\n%w", kh.filename, err)
+	}
+
+	kh.Kh = khdb
+	return nil
 }
 
 func InitializeKnownHosts(options ...KnownHostOption) error {

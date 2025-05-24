@@ -134,8 +134,11 @@ func (suite *SshTestSuite) TestUnknownHostDontAllow() {
 	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519"))
 	suite.NoError(err)
 
-	_, err = NewSsh(suite.sshHost, "test", privKey, false, false, NewTypedPassphraseProvider())
+	sshSession := NewSsh(suite.sshHost, "test", privKey, WithPassphraseProviderOption(NewTypedPassphraseProvider()))
+	defer sshSession.Close()
+
 	// should fail b/c host is unknown and we don't allow for that
+	err = sshSession.Connect()
 	suite.Error(err)
 }
 
@@ -144,9 +147,11 @@ func (suite *SshTestSuite) TestUnknownHostAllow() {
 	suite.NoError(err)
 
 	// allow the unknown host to be connected to
-	sshSession, err := NewSsh(suite.sshHost, "test", privKey, false, true, NewTypedPassphraseProvider())
-	suite.NoError(err)
+	sshSession := NewSsh(suite.sshHost, "test", privKey, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
+
+	err = sshSession.Connect()
+	suite.NoError(err)
 }
 
 func (suite *SshTestSuite) TestKnownHostNoProblem() {
@@ -154,14 +159,16 @@ func (suite *SshTestSuite) TestKnownHostNoProblem() {
 	suite.NoError(err)
 
 	// allow the unknown host to be connected to, so that we can cache it in our known_hosts
-	sshSession, err := NewSsh(suite.sshHost, "test", privKey, false, true, NewTypedPassphraseProvider())
-	suite.NoError(err)
+	sshSession := NewSsh(suite.sshHost, "test", privKey, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
+	err = sshSession.Connect()
+	suite.NoError(err)
 
 	// this time, fail if a host is unknown.  it should already be part of our known_hosts though, so it should pass
-	sshSession, err = NewSsh(suite.sshHost, "test", privKey, false, true, NewTypedPassphraseProvider())
-	suite.NoError(err)
+	sshSession = NewSsh(suite.sshHost, "test", privKey, WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
+	err = sshSession.Connect()
+	suite.NoError(err)
 }
 
 func (suite *SshTestSuite) TestKeyWithPassphrase() {
@@ -169,18 +176,22 @@ func (suite *SshTestSuite) TestKeyWithPassphrase() {
 	suite.NoError(err)
 
 	// block entry with bad passphrase on locked private key
-	sshSession, err := NewSsh(suite.sshHost, "test", privKey, false, true, NewDefaultPassphraseProvider("badphrase"))
+	sshSession := NewSsh(suite.sshHost, "test", privKey, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("badphrase")))
+	defer sshSession.Close()
+	err = sshSession.Connect()
 	suite.Error(err)
 
 	// admit entry once by providing the passphrase when prompted with the correct passphrase
-	sshSession, err = NewSsh(suite.sshHost, "test", privKey, false, true, NewDefaultPassphraseProvider(TestPassphrase))
-	suite.NoError(err)
+	sshSession = NewSsh(suite.sshHost, "test", privKey, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider(TestPassphrase)))
 	defer sshSession.Close()
+	err = sshSession.Connect()
+	suite.NoError(err)
 
 	// admit entry even with empty phrase, because agent should now hold the unlocked key
-	sshSession, err = NewSsh(suite.sshHost, "test", privKey, false, true, NewDefaultPassphraseProvider(""))
-	suite.NoError(err)
+	sshSession = NewSsh(suite.sshHost, "test", privKey, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("")))
 	defer sshSession.Close()
+	err = sshSession.Connect()
+	suite.NoError(err)
 }
 
 func TestSshSuite(t *testing.T) {
