@@ -134,24 +134,25 @@ func run() error {
 				return fmt.Errorf("sequence aborted due to one or more failures")
 			}
 		}
+		close(execChan)
 	} else {
 		for _, e := range executors {
 			execWaitGroup.Add(1)
 			execChan <- e
+		}
 
-			// wait until all goroutines are finished
-			execWaitGroup.Wait()
+		// wait until all goroutines are finished
+		execWaitGroup.Wait()
 
-			// pull errors from error channel
-			errChanLen := len(errChan)
-			for range errChanLen {
-				err := <-errChan
-				fmt.Printf("%s\n", err)
-			}
-			if errChanLen > 0 {
-				close(execChan)
-				return fmt.Errorf("sequence aborted due to one or more failures")
-			}
+		// pull errors from error channel
+		errChanLen := len(errChan)
+		for range errChanLen {
+			err := <-errChan
+			fmt.Printf("%s\n", err)
+		}
+		if errChanLen > 0 {
+			close(execChan)
+			return fmt.Errorf("sequence aborted due to one or more failures")
 		}
 	}
 
