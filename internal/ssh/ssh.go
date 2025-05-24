@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/skeema/knownhosts"
 	"golang.org/x/crypto/ssh"
 )
@@ -208,7 +209,7 @@ func (s *SshSession) Connect() error {
 	return nil
 }
 
-func (s *SshSession) NewCmdSession() (*SshCmdSession, error) {
+func (s *SshSession) NewCmdSession() (cmdsession.CmdSession, error) {
 	return &SshCmdSession{
 		client: s.client,
 	}, nil

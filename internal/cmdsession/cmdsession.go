@@ -8,7 +8,7 @@ import (
 type ExecutionClient interface {
 	Connect() error
 	Close() error
-	GetCmdSession() (CmdSession, error)
+	NewCmdSession() (CmdSession, error)
 }
 
 type SessionError struct {

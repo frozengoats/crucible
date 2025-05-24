@@ -116,13 +116,41 @@ func ApplyDefaults(target any) error {
 		case reflect.Struct:
 			// go deeper
 			ifx := f.Addr().Interface()
-			//ifx := f.Interface()
 			err := ApplyDefaults(ifx)
 			if err != nil {
 				return err
 			}
 
 			continue
+		case reflect.Map:
+			// go deeper
+			for _, mapKey := range f.MapKeys() {
+				mapValue := f.MapIndex(mapKey)
+				switch mapValue.Kind() {
+				case reflect.Pointer:
+					if f.IsNil() {
+						continue
+					}
+					ptr := mapValue.Interface()
+					val := reflect.ValueOf(ptr)
+					elem := val.Elem()
+					if elem.Kind() == reflect.Struct {
+						err := ApplyDefaults(ptr)
+						if err != nil {
+							return err
+						}
+
+						continue
+					}
+				case reflect.Struct:
+					// go deeper
+					ifx := mapValue.Addr().Interface()
+					err := ApplyDefaults(ifx)
+					if err != nil {
+						return err
+					}
+				}
+			}
 		}
 
 		tag := v.Tag

@@ -44,12 +44,37 @@ func run() error {
 		return err
 	}
 
-	numHosts := len(configObj.Hosts)
-	maxConcurrentHosts := configObj.Executor.MaxConcurrentHosts
-	if maxConcurrentHosts == 0 {
-		maxConcurrentHosts = 5
+	selectedHosts := map[string]struct{}{}
+	for _, hostIdent := range command.Targets {
+		selectedHosts[hostIdent] = struct{}{}
 	}
-	if num
+
+	hostIdents := []string{}
+	for hostIdent, hostConfig := range configObj.Hosts {
+		if len(selectedHosts) == 0 {
+			hostIdents = append(hostIdents, hostIdent)
+		} else {
+			if _, ok := selectedHosts[hostIdent]; ok {
+				hostIdents = append(hostIdents, hostIdent)
+			} else if _, ok := selectedHosts[hostConfig.Group]; ok {
+				hostIdents = append(hostIdents, hostIdent)
+			}
+		}
+	}
+
+	if len(hostIdents) == 0 {
+		return fmt.Errorf("no hosts specified")
+	}
+
+	maxConcurrentHosts := configObj.Executor.MaxConcurrentHosts
+	if len(hostIdents) < maxConcurrentHosts {
+		maxConcurrentHosts = len(hostIdents)
+	}
+
+	// iterate the selected hosts
+	for _, hostIdent := range hostIdents {
+
+	}
 
 	return nil
 }

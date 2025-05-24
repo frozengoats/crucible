@@ -5,28 +5,29 @@ import (
 	"os/user"
 	"sync"
 
+	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/frozengoats/crucible/internal/sequence"
 	"github.com/frozengoats/crucible/internal/ssh"
 )
 
 type Executor struct {
-	Config         *config.Config
-	HostConfig     *config.HostConfig
-	HostConfigName string
-	SequencePath   string
+	Config       *config.Config
+	HostConfig   *config.HostConfig
+	HostIdent    string
+	SequencePath string
 
-	sshSession *ssh.SshSession
-	sequence   *sequence.Sequence
+	executionClient cmdsession.ExecutionClient
+	sequence        *sequence.Sequence
 }
 
 var passphraseLock sync.Mutex
 
 // NewExecutor creates an executor instance for dealing with a specific host and sequence
-func NewExecutor(cfg *config.Config, hostConfigName string, sequencePath string) (*Executor, error) {
-	hostConfig, ok := cfg.Hosts[hostConfigName]
+func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Executor, error) {
+	hostConfig, ok := cfg.Hosts[hostIdent]
 	if !ok {
-		return nil, fmt.Errorf("no host key \"%s\" exists", hostConfigName)
+		return nil, fmt.Errorf("no host identity \"%s\" exists", hostIdent)
 	}
 
 	sshKeyPath := cfg.Executor.Ssh.KeyPath
@@ -35,7 +36,7 @@ func NewExecutor(cfg *config.Config, hostConfigName string, sequencePath string)
 	}
 
 	if sshKeyPath == "" {
-		return nil, fmt.Errorf("no ssh key was specified both at top level or for host key \"%s\"", hostConfigName)
+		return nil, fmt.Errorf("no ssh key was specified both at top level or for host identity \"%s\"", hostIdent)
 	}
 
 	u, err := user.Current()
@@ -55,13 +56,13 @@ func NewExecutor(cfg *config.Config, hostConfigName string, sequencePath string)
 	}
 
 	ex := &Executor{
-		Config:         cfg,
-		HostConfig:     hostConfig,
-		HostConfigName: hostConfigName,
-		SequencePath:   sequencePath,
+		Config:       cfg,
+		HostConfig:   hostConfig,
+		HostIdent:    hostIdent,
+		SequencePath: sequencePath,
 
-		sshSession: sshSession,
-		sequence:   s,
+		executionClient: sshSession,
+		sequence:        s,
 	}
 	return ex, nil
 }
