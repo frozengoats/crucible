@@ -19,6 +19,7 @@ type Executor struct {
 
 	executionClient cmdsession.ExecutionClient
 	sequence        *sequence.Sequence
+	sequenceIndex   int
 }
 
 var passphraseLock sync.Mutex
@@ -63,6 +64,7 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 
 		executionClient: sshSession,
 		sequence:        s,
+		sequenceIndex:   0,
 	}
 	return ex, nil
 }
@@ -73,4 +75,8 @@ func (ex *Executor) RunOne() error {
 
 func (ex *Executor) RunAll() error {
 	return nil
+}
+
+func (ex *Executor) HasMore() bool {
+	return ex.sequenceIndex <= ex.sequence.Len()
 }

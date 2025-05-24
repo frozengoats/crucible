@@ -52,6 +52,10 @@ type Sequence struct {
 	Sequence    []*Action
 }
 
+func (s *Sequence) Len() int {
+	return len(s.Sequence)
+}
+
 func LoadSequence(filename string) (*Sequence, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {

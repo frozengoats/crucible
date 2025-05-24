@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/frozengoats/crucible/internal/defaults"
 	"github.com/frozengoats/crucible/internal/yamlstack"
 	"github.com/goccy/go-yaml"
 )
@@ -61,6 +62,11 @@ func FromFilePaths(cwd string, stackPaths ...string) (*Config, error) {
 	err = yaml.Unmarshal(b, c)
 	if err != nil {
 		return nil, fmt.Errorf("yaml provided was incompatible with the config spec\n%w", err)
+	}
+
+	err = defaults.ApplyDefaults(c)
+	if err != nil {
+		return nil, fmt.Errorf("unable to apply defaults to config\n%w", err)
 	}
 
 	return c, nil
