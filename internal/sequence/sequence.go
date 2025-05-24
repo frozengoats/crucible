@@ -3,8 +3,10 @@ package sequence
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
+	"github.com/frozengoats/crucible/internal/config"
 	"github.com/goccy/go-yaml"
 )
 
@@ -52,8 +54,17 @@ type Sequence struct {
 	Sequence    []*Action
 }
 
-func (s *Sequence) Len() int {
-	return len(s.Sequence)
+func (s *Sequence) CountExecutionSteps() int {
+	steps := 0
+	for _, seq := range s.Sequence {
+		if seq.SubSequence != nil {
+			steps += seq.SubSequence.CountExecutionSteps()
+		} else {
+			steps++
+		}
+	}
+
+	return steps
 }
 
 func LoadSequence(filename string) (*Sequence, error) {
@@ -68,24 +79,57 @@ func LoadSequence(filename string) (*Sequence, error) {
 		return nil, fmt.Errorf("sequence file %s contained bad yaml data\n%w", filename, err)
 	}
 
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("unable to obtain the current working directory\n%w", err)
+	}
+
+	for _, s := range s.Sequence {
+		if s.Import != "" {
+			importPath, err := filepath.Abs(filepath.Join(cwd, s.Import))
+			if err != nil {
+				return nil, fmt.Errorf("unable to resolve import path for %s\n%w", s.Import, err)
+			}
+
+			s.SubSequence, err = LoadSequence(importPath)
+			if err != nil {
+				return nil, fmt.Errorf("unable to load sub sequence at %s\n%w", importPath, err)
+			}
+		}
+	}
+
 	return s, err
 }
 
 type ExecutionInstance struct {
-	syncEachStep    bool
-	executionClient cmdsession.ExecutionClient
-	seq             []*Action
-	curStep         int
+	config               *config.Config
+	hostIdent            string
+	hostConfig           *config.HostConfig
+	executionClient      *cmdsession.ExecutionClient
+	sequence             *Sequence
+	totalExecutionSteps  int
+	currentExecutionStep int
 }
 
-func (s *Sequence) CreateExecutionInstance(executionClient cmdsession.ExecutionClient, syncEachStep bool) *ExecutionInstance {
+func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) *ExecutionInstance {
 	return &ExecutionInstance{
-		syncEachStep:    syncEachStep,
-		executionClient: executionClient,
-		seq:             s.Sequence[:],
+		config:               config,
+		hostIdent:            hostIdent,
+		hostConfig:           config.Hosts[hostIdent],
+		executionClient:      &executionClient,
+		sequence:             s,
+		totalExecutionSteps:  s.CountExecutionSteps(),
+		currentExecutionStep: 0,
 	}
 }
 
-func (ei *ExecutionInstance) Execute() error {
-	return nil
+func (ei *ExecutionInstance) Next() *Action {
+	i := 0
+	for _, act := range ei.sequence.Sequence {
+		// don't count this step as a step, count the first step in the sub sequence
+		if act.SubSequence != nil {
+
+		}
+		if i == ei.currentExecutionStep
+	}
 }
