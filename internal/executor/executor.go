@@ -15,6 +15,9 @@ type Executor struct {
 	HostConfig     *config.HostConfig
 	HostConfigName string
 	SequencePath   string
+
+	sshSession *ssh.SshSession
+	sequence   *sequence.Sequence
 }
 
 var passphraseLock sync.Mutex
@@ -25,45 +28,48 @@ func NewExecutor(cfg *config.Config, hostConfigName string, sequencePath string)
 	if !ok {
 		return nil, fmt.Errorf("no host key \"%s\" exists", hostConfigName)
 	}
+
+	sshKeyPath := cfg.Executor.Ssh.KeyPath
+	if hostConfig.SshKeyPath != "" {
+		sshKeyPath = hostConfig.SshKeyPath
+	}
+
+	if sshKeyPath == "" {
+		return nil, fmt.Errorf("no ssh key was specified both at top level or for host key \"%s\"", hostConfigName)
+	}
+
+	u, err := user.Current()
+	if err != nil {
+		return nil, fmt.Errorf("unable to ascertain current user\n%w", err)
+	}
+
+	sshSession := ssh.NewSsh(hostConfig.Host, u.Username, sshKeyPath,
+		ssh.WithIgnoreHostKeyChangeOption(cfg.Executor.Ssh.IgnoreHostKeyChange),
+		ssh.WithAllowUnknownHostsOption(cfg.Executor.Ssh.AllowUnknownHosts),
+		ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),
+	)
+
+	s, err := sequence.LoadSequence(sequencePath)
+	if err != nil {
+		return nil, err
+	}
+
 	ex := &Executor{
 		Config:         cfg,
 		HostConfig:     hostConfig,
 		HostConfigName: hostConfigName,
 		SequencePath:   sequencePath,
+
+		sshSession: sshSession,
+		sequence:   s,
 	}
 	return ex, nil
 }
 
-func (ex *Executor) Run() error {
-	sshKeyPath := ex.Config.Executor.Ssh.KeyPath
-	if ex.HostConfig.SshKeyPath != "" {
-		sshKeyPath = ex.HostConfig.SshKeyPath
-	}
+func (ex *Executor) RunOne() error {
+	return nil
+}
 
-	if sshKeyPath == "" {
-		return fmt.Errorf("no ssh key was specified both at top level or for host key \"%s\"", ex.HostConfigName)
-	}
-
-	u, err := user.Current()
-	if err != nil {
-		return fmt.Errorf("unable to ascertain current user\n%w", err)
-	}
-
-	sshSession := ssh.NewSsh(ex.HostConfig.Host, u.Username, sshKeyPath,
-		ssh.WithIgnoreHostKeyChangeOption(ex.Config.Executor.Ssh.IgnoreHostKeyChange),
-		ssh.WithAllowUnknownHostsOption(ex.Config.Executor.Ssh.AllowUnknownHosts),
-		ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),
-	)
-	if err != nil {
-		return fmt.Errorf("unable to create ssh session for host id %s\n%w", ex.HostConfigName, err)
-	}
-
-	s, err := sequence.LoadSequence(ex.SequencePath)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(sshSession)
-	fmt.Println(s)
+func (ex *Executor) RunAll() error {
 	return nil
 }

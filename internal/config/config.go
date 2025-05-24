@@ -15,6 +15,7 @@ type SshConfig struct {
 }
 
 type Executor struct {
+	MaxConcurrentHosts int       `yaml:"maxConcurrentHosts" default:"10"`
 	Ssh                SshConfig `yaml:"ssh"`
 	SyncExecutionSteps bool      `yaml:"syncExecutionSteps"` // if true, execution step must complete on all hosts before advancing
 }
@@ -28,9 +29,13 @@ type HostConfig struct {
 
 type Config struct {
 	// keys are unique host identifiers, though they themselves have no meaning
-	Executor *Executor              `yaml:"executor"`
+	Executor Executor               `yaml:"executor"`
 	Hosts    map[string]*HostConfig `yaml:"hosts"`
 	Context  map[string]any         `yaml:"context"` // host specific context for per-host data to be referenced later
+}
+
+func (c *Config) ApplyDefaults() {
+
 }
 
 func FromFilePaths(cwd string, stackPaths ...string) (*Config, error) {

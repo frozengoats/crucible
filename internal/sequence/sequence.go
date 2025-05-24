@@ -68,16 +68,20 @@ func LoadSequence(filename string) (*Sequence, error) {
 }
 
 type ExecutionInstance struct {
-	syncEachStep bool
-	cmdSession   cmdsession.CmdSession
-	seq          []*Action
-	curStep      int
+	syncEachStep    bool
+	executionClient cmdsession.ExecutionClient
+	seq             []*Action
+	curStep         int
 }
 
-func (s *Sequence) CreateExecutionInstance(cmdSession cmdsession.CmdSession, syncEachStep bool) *ExecutionInstance {
+func (s *Sequence) CreateExecutionInstance(executionClient cmdsession.ExecutionClient, syncEachStep bool) *ExecutionInstance {
 	return &ExecutionInstance{
-		syncEachStep: syncEachStep,
-		cmdSession:   cmdSession,
-		seq:          s.Sequence[:],
+		syncEachStep:    syncEachStep,
+		executionClient: executionClient,
+		seq:             s.Sequence[:],
 	}
+}
+
+func (ei *ExecutionInstance) Execute() error {
+	return nil
 }

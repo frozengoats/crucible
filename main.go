@@ -44,7 +44,12 @@ func run() error {
 		return err
 	}
 
-	fmt.Println(configObj)
+	numHosts := len(configObj.Hosts)
+	maxConcurrentHosts := configObj.Executor.MaxConcurrentHosts
+	if maxConcurrentHosts == 0 {
+		maxConcurrentHosts = 5
+	}
+	if num
 
 	return nil
 }
