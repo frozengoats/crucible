@@ -2,6 +2,7 @@ package executor
 
 import (
 	"fmt"
+	"net"
 	"os/user"
 	"sync"
 
@@ -45,11 +46,30 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		return nil, fmt.Errorf("unable to ascertain current user\n%w", err)
 	}
 
-	sshSession := ssh.NewSsh(hostConfig.Host, u.Username, sshKeyPath,
-		ssh.WithIgnoreHostKeyChangeOption(cfg.Executor.Ssh.IgnoreHostKeyChange),
-		ssh.WithAllowUnknownHostsOption(cfg.Executor.Ssh.AllowUnknownHosts),
-		ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),
-	)
+	addrs, err := net.LookupIP(hostConfig.Host)
+	if err != nil {
+		return nil, fmt.Errorf("problem resolving hostname: %s\n%w", hostConfig.Host, err)
+	}
+
+	// this logic is a little weak - though is there a chance of having multiple ips that are both loopback and non-loopback?
+	isLoopback := false
+	for _, addr := range addrs {
+		if addr.IsLoopback() {
+			isLoopback = true
+			break
+		}
+	}
+
+	var executionClient cmdsession.ExecutionClient
+	if isLoopback {
+		executionClient = cmdsession.NewLocalExecutionClient()
+	} else {
+		executionClient = ssh.NewSsh(hostConfig.Host, u.Username, sshKeyPath,
+			ssh.WithIgnoreHostKeyChangeOption(cfg.Executor.Ssh.IgnoreHostKeyChange),
+			ssh.WithAllowUnknownHostsOption(cfg.Executor.Ssh.AllowUnknownHosts),
+			ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),
+		)
+	}
 
 	s, err := sequence.LoadSequence(sequencePath)
 	if err != nil {
@@ -62,7 +82,7 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		HostIdent:    hostIdent,
 		SequencePath: sequencePath,
 
-		executionClient: sshSession,
+		executionClient: executionClient,
 		sequence:        s,
 		sequenceIndex:   0,
 	}

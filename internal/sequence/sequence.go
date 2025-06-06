@@ -10,6 +10,11 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+type SeqPos struct {
+	Sequence *Sequence
+	Position int
+}
+
 type Sync struct {
 	Local     string `yaml:"local"`     // local resource(s) to sync to remote
 	Remote    string `yaml:"remote"`    // remote location to sync to
@@ -25,8 +30,6 @@ type Until struct {
 }
 
 type Action struct {
-	// these properties are action metadata
-
 	Name                string    `yaml:"name"` // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
 	Description         string    `yaml:"description"`
 	Iterable            string    `yaml:"iterable"`            // if an iterable is provided, it will be iterated and the child action will be called for each element
@@ -102,34 +105,70 @@ func LoadSequence(filename string) (*Sequence, error) {
 }
 
 type ExecutionInstance struct {
-	config               *config.Config
-	hostIdent            string
-	hostConfig           *config.HostConfig
-	executionClient      *cmdsession.ExecutionClient
-	sequence             *Sequence
-	totalExecutionSteps  int
-	currentExecutionStep int
+	config              *config.Config
+	hostIdent           string
+	hostConfig          *config.HostConfig
+	executionClient     *cmdsession.ExecutionClient
+	sequence            *Sequence
+	totalExecutionSteps int
+	executionStack      []SeqPos
 }
 
 func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) *ExecutionInstance {
 	return &ExecutionInstance{
-		config:               config,
-		hostIdent:            hostIdent,
-		hostConfig:           config.Hosts[hostIdent],
-		executionClient:      &executionClient,
-		sequence:             s,
-		totalExecutionSteps:  s.CountExecutionSteps(),
-		currentExecutionStep: 0,
+		config:              config,
+		hostIdent:           hostIdent,
+		hostConfig:          config.Hosts[hostIdent],
+		executionClient:     &executionClient,
+		sequence:            s,
+		totalExecutionSteps: s.CountExecutionSteps(),
 	}
 }
 
 func (ei *ExecutionInstance) Next() *Action {
-	i := 0
-	for _, act := range ei.sequence.Sequence {
-		// don't count this step as a step, count the first step in the sub sequence
-		if act.SubSequence != nil {
+	var stackIndex int
+	var stackItem *SeqPos
 
+	if ei.executionStack == nil {
+		ei.executionStack = []SeqPos{
+			{
+				Sequence: ei.sequence,
+				Position: 0,
+			},
 		}
-		if i == ei.currentExecutionStep
+
+		stackIndex = len(ei.executionStack) - 1
+		stackItem = &ei.executionStack[stackIndex]
+		return stackItem.Sequence.Sequence[stackItem.Position]
+	}
+
+	for {
+		if len(ei.executionStack) == 0 {
+			return nil
+		}
+
+		stackIndex = len(ei.executionStack) - 1
+		stackItem = &ei.executionStack[stackIndex]
+
+		stackItem.Position++
+		if stackItem.Position >= len(stackItem.Sequence.Sequence) {
+			// pop this item off the stack and move onto the next
+			if len(ei.executionStack) > 1 {
+				ei.executionStack = ei.executionStack[:len(ei.executionStack)-1]
+			} else {
+				ei.executionStack = []SeqPos{}
+			}
+		} else {
+			action := stackItem.Sequence.Sequence[stackItem.Position]
+			if action.SubSequence == nil {
+				return action
+			}
+
+			// push the next subsequence onto the stack
+			ei.executionStack = append(ei.executionStack, SeqPos{
+				Sequence: action.SubSequence,
+				Position: -1,
+			})
+		}
 	}
 }

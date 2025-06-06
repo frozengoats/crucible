@@ -3,12 +3,39 @@ package cmdsession
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 )
 
 type ExecutionClient interface {
 	Connect() error
 	Close() error
 	NewCmdSession() (CmdSession, error)
+}
+
+type DummyCmdSession struct {
+}
+
+func (cs *DummyCmdSession) Execute(cmd string) ([]byte, error) {
+	return nil, nil
+}
+
+func NewDummyExecutionClient() *DummyExecutionClient {
+	return &DummyExecutionClient{}
+}
+
+type DummyExecutionClient struct {
+}
+
+func (c *DummyExecutionClient) Connect() error {
+	return nil
+}
+
+func (c *DummyExecutionClient) Close() error {
+	return nil
+}
+
+func (c *DummyExecutionClient) NewCmdSession() (CmdSession, error) {
+	return &DummyCmdSession{}, nil
 }
 
 type SessionError struct {
@@ -57,4 +84,40 @@ func GetExitCode(err error) (int, bool) {
 	}
 
 	return exitCodeError.code, true
+}
+
+type LocalExecutionClient struct {
+}
+
+func NewLocalExecutionClient() *LocalExecutionClient {
+	return &LocalExecutionClient{}
+}
+
+func (c *LocalExecutionClient) Connect() error {
+	return nil
+}
+
+func (c *LocalExecutionClient) Close() error {
+	return nil
+}
+
+func (c *LocalExecutionClient) NewCmdSession() (CmdSession, error) {
+	return &DummyCmdSession{}, nil
+}
+
+type LocalCmdSession struct {
+}
+
+func (c *LocalCmdSession) Execute(cmd string) ([]byte, error) {
+	com := exec.Command(cmd)
+	outBytes, err := com.Output()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			return nil, NewExitCodeError(exitError.ExitCode())
+		}
+
+		return nil, err
+	}
+
+	return outBytes, nil
 }

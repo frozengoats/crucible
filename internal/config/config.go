@@ -35,10 +35,6 @@ type Config struct {
 	Context  map[string]any         `yaml:"context"` // host specific context for per-host data to be referenced later
 }
 
-func (c *Config) ApplyDefaults() {
-
-}
-
 func FromFilePaths(cwd string, stackPaths ...string) (*Config, error) {
 	var err error
 	absPaths := []string{}
