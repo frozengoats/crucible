@@ -18,9 +18,10 @@ type Executor struct {
 	HostIdent    string
 	SequencePath string
 
-	executionClient cmdsession.ExecutionClient
-	sequence        *sequence.Sequence
-	sequenceIndex   int
+	executionClient   cmdsession.ExecutionClient
+	sequence          *sequence.Sequence
+	sequenceIndex     int
+	ExecutionInstance *sequence.ExecutionInstance
 }
 
 var passphraseLock sync.Mutex
@@ -77,26 +78,104 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 	}
 
 	ex := &Executor{
-		Config:       cfg,
-		HostConfig:   hostConfig,
-		HostIdent:    hostIdent,
-		SequencePath: sequencePath,
-
-		executionClient: executionClient,
-		sequence:        s,
-		sequenceIndex:   0,
+		Config:            cfg,
+		HostConfig:        hostConfig,
+		HostIdent:         hostIdent,
+		SequencePath:      sequencePath,
+		executionClient:   executionClient,
+		sequence:          s,
+		sequenceIndex:     0,
+		ExecutionInstance: s.NewExecutionInstance(executionClient, cfg, hostIdent),
 	}
 	return ex, nil
 }
 
-func (ex *Executor) RunOne() error {
-	return nil
-}
+// RunConcurrentExecutionGroup creates and runs concurrent execution groups
+func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, hostIdents []string) error {
+	maxConcurrentHosts := configObj.Executor.MaxConcurrentHosts
+	if len(hostIdents) < maxConcurrentHosts {
+		maxConcurrentHosts = len(hostIdents)
+	}
 
-func (ex *Executor) RunAll() error {
-	return nil
-}
+	// iterate the selected hosts
+	executors := []*Executor{}
+	for _, hostIdent := range hostIdents {
+		e, err := NewExecutor(configObj, hostIdent, sequencePath)
+		if err != nil {
+			return fmt.Errorf("unable to create executor\n%w", err)
+		}
+		executors = append(executors, e)
+	}
 
-func (ex *Executor) HasMore() bool {
-	return ex.sequenceIndex <= ex.sequence.Len()
+	syncExecutionSteps := configObj.Executor.SyncExecutionSteps
+
+	execWaitGroup := &sync.WaitGroup{}
+	execChan := make(chan *Executor, maxConcurrentHosts)
+	errChan := make(chan error, len(hostIdents))
+	for range maxConcurrentHosts {
+		go func() {
+			for e := range execChan {
+				if syncExecutionSteps {
+					action := e.ExecutionInstance.Next()
+				} else {
+					action := e.ExecutionInstance.Next()
+				}
+
+				defer execWaitGroup.Done()
+
+				// execute the action
+
+			}
+		}()
+	}
+
+	if configObj.Executor.SyncExecutionSteps {
+		hasMore := true
+		for hasMore {
+			hasMore = false
+			for _, e := range executors {
+				if e.ExecutionInstance.HasMore() {
+					hasMore = true
+					execWaitGroup.Add(1)
+					execChan <- e
+				}
+			}
+
+			// wait until all goroutines are finished
+			execWaitGroup.Wait()
+
+			// pull errors from error channel
+			errChanLen := len(errChan)
+			for range errChanLen {
+				err := <-errChan
+				fmt.Printf("%s\n", err)
+			}
+			if errChanLen > 0 {
+				close(execChan)
+				return fmt.Errorf("sequence aborted due to one or more failures")
+			}
+		}
+		close(execChan)
+	} else {
+		for _, e := range executors {
+			execWaitGroup.Add(1)
+			execChan <- e
+		}
+
+		// wait until all goroutines are finished
+		execWaitGroup.Wait()
+
+		// pull errors from error channel
+		errChanLen := len(errChan)
+		for range errChanLen {
+			err := <-errChan
+			fmt.Printf("%s\n", err)
+		}
+		if errChanLen > 0 {
+			close(execChan)
+			return fmt.Errorf("sequence aborted due to one or more failures")
+		}
+	}
+
+	return nil
 }

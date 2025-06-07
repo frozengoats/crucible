@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/alecthomas/kong"
 	"github.com/frozengoats/crucible/internal/config"
@@ -16,24 +15,6 @@ var command struct {
 	ConfigStack []string `short:"s" help:"list of paths to any config yaml overrides, stackable in order of occurrence"`
 	Sequence    string   `arg:"" help:"the full or relative path to the sequence to execute"`
 	Targets     []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence"`
-}
-
-func runExecutor(execChan <-chan *executor.Executor, errChan chan error, syncExecutionSteps bool, wg *sync.WaitGroup) {
-	for e := range execChan {
-		if syncExecutionSteps {
-			err := e.RunOne()
-			if err != nil {
-				errChan <- err
-			}
-		} else {
-			err := e.RunAll()
-			if err != nil {
-				errChan <- err
-			}
-		}
-
-		wg.Done()
-	}
 }
 
 func run() error {
@@ -86,77 +67,7 @@ func run() error {
 		return fmt.Errorf("no hosts specified")
 	}
 
-	maxConcurrentHosts := configObj.Executor.MaxConcurrentHosts
-	if len(hostIdents) < maxConcurrentHosts {
-		maxConcurrentHosts = len(hostIdents)
-	}
-
-	// iterate the selected hosts
-	executors := []*executor.Executor{}
-	for _, hostIdent := range hostIdents {
-		e, err := executor.NewExecutor(configObj, hostIdent, command.Sequence)
-		if err != nil {
-			return fmt.Errorf("unable to create executor\n%w", err)
-		}
-		executors = append(executors, e)
-	}
-
-	execWaitGroup := &sync.WaitGroup{}
-	execChan := make(chan *executor.Executor, maxConcurrentHosts)
-	errChan := make(chan error, len(hostIdents))
-	for range maxConcurrentHosts {
-		go runExecutor(execChan, errChan, configObj.Executor.SyncExecutionSteps, execWaitGroup)
-	}
-
-	if configObj.Executor.SyncExecutionSteps {
-		hasMore := true
-		for hasMore {
-			hasMore = false
-			for _, e := range executors {
-				if e.HasMore() {
-					hasMore = true
-					execWaitGroup.Add(1)
-					execChan <- e
-				}
-			}
-
-			// wait until all goroutines are finished
-			execWaitGroup.Wait()
-
-			// pull errors from error channel
-			errChanLen := len(errChan)
-			for range errChanLen {
-				err := <-errChan
-				fmt.Printf("%s\n", err)
-			}
-			if errChanLen > 0 {
-				close(execChan)
-				return fmt.Errorf("sequence aborted due to one or more failures")
-			}
-		}
-		close(execChan)
-	} else {
-		for _, e := range executors {
-			execWaitGroup.Add(1)
-			execChan <- e
-		}
-
-		// wait until all goroutines are finished
-		execWaitGroup.Wait()
-
-		// pull errors from error channel
-		errChanLen := len(errChan)
-		for range errChanLen {
-			err := <-errChan
-			fmt.Printf("%s\n", err)
-		}
-		if errChanLen > 0 {
-			close(execChan)
-			return fmt.Errorf("sequence aborted due to one or more failures")
-		}
-	}
-
-	return nil
+	return executor.RunConcurrentExecutionGroup(command.Sequence, configObj, hostIdents)
 }
 
 func main() {

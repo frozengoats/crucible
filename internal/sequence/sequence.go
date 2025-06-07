@@ -1,6 +1,7 @@
 package sequence
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/goccy/go-yaml"
 )
+
+var EndOfSequence = errors.New("end of sequence reached")
 
 type SeqPos struct {
 	Sequence *Sequence
@@ -105,13 +108,14 @@ func LoadSequence(filename string) (*Sequence, error) {
 }
 
 type ExecutionInstance struct {
-	config              *config.Config
-	hostIdent           string
-	hostConfig          *config.HostConfig
-	executionClient     *cmdsession.ExecutionClient
-	sequence            *Sequence
-	totalExecutionSteps int
-	executionStack      []SeqPos
+	config               *config.Config
+	hostIdent            string
+	hostConfig           *config.HostConfig
+	executionClient      *cmdsession.ExecutionClient
+	sequence             *Sequence
+	totalExecutionSteps  int
+	executionStack       []SeqPos
+	currentExecutionStep int
 }
 
 func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) *ExecutionInstance {
@@ -125,21 +129,23 @@ func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClie
 	}
 }
 
+func (ei *ExecutionInstance) HasMore() bool {
+	return ei.currentExecutionStep < ei.totalExecutionSteps
+}
+
 func (ei *ExecutionInstance) Next() *Action {
 	var stackIndex int
 	var stackItem *SeqPos
+	started := false
 
 	if ei.executionStack == nil {
+		started = true
 		ei.executionStack = []SeqPos{
 			{
 				Sequence: ei.sequence,
 				Position: 0,
 			},
 		}
-
-		stackIndex = len(ei.executionStack) - 1
-		stackItem = &ei.executionStack[stackIndex]
-		return stackItem.Sequence.Sequence[stackItem.Position]
 	}
 
 	for {
@@ -150,7 +156,10 @@ func (ei *ExecutionInstance) Next() *Action {
 		stackIndex = len(ei.executionStack) - 1
 		stackItem = &ei.executionStack[stackIndex]
 
-		stackItem.Position++
+		if !started {
+			stackItem.Position++
+		}
+
 		if stackItem.Position >= len(stackItem.Sequence.Sequence) {
 			// pop this item off the stack and move onto the next
 			if len(ei.executionStack) > 1 {
@@ -161,6 +170,7 @@ func (ei *ExecutionInstance) Next() *Action {
 		} else {
 			action := stackItem.Sequence.Sequence[stackItem.Position]
 			if action.SubSequence == nil {
+				ei.currentExecutionStep++
 				return action
 			}
 
@@ -171,4 +181,8 @@ func (ei *ExecutionInstance) Next() *Action {
 			})
 		}
 	}
+}
+
+func (ei *ExecutionInstance) Execute(action *Action) error {
+	return nil
 }
