@@ -8,13 +8,16 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/frozengoats/crucible/internal/executor"
+	"github.com/frozengoats/kvstore"
+	"github.com/goccy/go-yaml"
 )
 
 var command struct {
-	Cwd         string   `short:"c" help:"change the current working directory to this location"`
-	ConfigStack []string `short:"s" help:"list of paths to any config yaml overrides, stackable in order of occurrence"`
-	Sequence    string   `arg:"" help:"the full or relative path to the sequence to execute"`
-	Targets     []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence"`
+	Cwd      string   `short:"c" help:"change the current working directory to this location"`
+	Configs  []string `short:"s" help:"list of paths to any config yaml overrides, stackable in order of occurrence (excluding config.yaml)"`
+	Values   []string `short:"v" help:"list of paths to values files, stackable in order of occurrence (excluding values.yaml)"`
+	Sequence string   `arg:"" help:"the full or relative path to the sequence to execute"`
+	Targets  []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence"`
 }
 
 func run() error {
@@ -39,11 +42,57 @@ func run() error {
 		return fmt.Errorf("no config.yaml could be located at %s, are you sure this is a crucible configuration?\n%w", configPath, err)
 	}
 
-	configPaths := append([]string{configPath}, command.ConfigStack...)
+	configPaths := append([]string{configPath}, command.Configs...)
 	configObj, err := config.FromFilePaths(cwd, configPaths...)
 	if err != nil {
 		return err
 	}
+
+	var valuesStore *kvstore.Store
+	valuesStack := []string{}
+	valuesPath := filepath.Join(cwd, "values.yaml")
+	_, err = os.Stat(valuesPath)
+	if err != nil {
+		valuesStore = kvstore.NewStore()
+		valuesStack = command.Values
+	} else {
+		valuesStack = append(valuesStack, valuesPath)
+		valuesStack = append(valuesStack, command.Values...)
+	}
+
+	for _, vp := range valuesStack {
+		if !filepath.IsAbs(vp) {
+			nvp, err := filepath.Abs(filepath.Join(cwd, vp))
+			if err != nil {
+				return fmt.Errorf("unable to reconcile values file %s", vp)
+			}
+			vp = nvp
+		}
+
+		valuesBytes, err := os.ReadFile(vp)
+		if err != nil {
+			return fmt.Errorf("unable to read values file at %s", vp)
+		}
+
+		vTarget := map[string]any{}
+		err = yaml.Unmarshal(valuesBytes, &vTarget)
+		if err != nil {
+			return fmt.Errorf("unable to parse yaml from values file at %s", vp)
+		}
+
+		s, err := kvstore.FromMapping(vTarget)
+		if err != nil {
+			return fmt.Errorf("problem creating store from values file at %s\n%w", vp, err)
+		}
+
+		valuesStore, err = valuesStore.Overylay(s)
+		if err != nil {
+			return fmt.Errorf("unable to overlay %s on base\n%w", vp, err)
+		}
+	}
+
+	// set the values storage object and carry it around here
+	configObj.ValuesStore = valuesStore
 
 	selectedHosts := map[string]struct{}{}
 	for _, hostIdent := range command.Targets {

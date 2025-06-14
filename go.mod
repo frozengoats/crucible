@@ -7,6 +7,8 @@ toolchain go1.23.8
 require (
 	github.com/alecthomas/kong v1.10.0
 	github.com/docker/docker v28.0.1+incompatible
+	github.com/docker/go-connections v0.5.0
+	github.com/frozengoats/kvstore v0.0.1
 	github.com/goccy/go-yaml v1.17.1
 	github.com/skeema/knownhosts v1.3.1
 	github.com/stretchr/testify v1.10.0
@@ -24,7 +26,6 @@ require (
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect

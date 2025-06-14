@@ -6,6 +6,7 @@ import (
 
 	"github.com/frozengoats/crucible/internal/defaults"
 	"github.com/frozengoats/crucible/internal/yamlstack"
+	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
 )
 
@@ -30,9 +31,9 @@ type HostConfig struct {
 
 type Config struct {
 	// keys are unique host identifiers, though they themselves have no meaning
-	Executor Executor               `yaml:"executor"`
-	Hosts    map[string]*HostConfig `yaml:"hosts"`
-	Context  map[string]any         `yaml:"context"` // host specific context for per-host data to be referenced later
+	Executor    Executor               `yaml:"executor"`
+	Hosts       map[string]*HostConfig `yaml:"hosts"`
+	ValuesStore *kvstore.Store
 }
 
 func FromFilePaths(cwd string, stackPaths ...string) (*Config, error) {

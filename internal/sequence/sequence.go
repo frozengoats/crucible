@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/frozengoats/crucible/internal/config"
+	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
 )
 
@@ -55,9 +57,37 @@ type Action struct {
 	Sync  *Sync    `yaml:"sync"`  // sync files from local to remote
 }
 
+func (a *Action) GetExecutionString() (string, bool) {
+	if len(a.Exec) == 0 || len(a.Shell) == 0 {
+		return "", false
+	}
+
+	if len(a.Exec) > 0 {
+		return strings.Join(a.Exec, " "), true
+	}
+
+	return fmt.Sprintf("sh -c '%s'", a.Shell), true
+}
+
 type Sequence struct {
-	Description string
-	Sequence    []*Action
+	Name        string    `yaml:"name"`
+	Description string    `yaml:"description"`
+	Sequence    []*Action `yaml:"actions"`
+	filename    string
+}
+
+func (s *Sequence) Validate() error {
+	if s.Name == "" {
+		return fmt.Errorf("sequence at %s must have the name field set", s.filename)
+	}
+
+	for index, action := range s.Sequence {
+		if action.Name == "" {
+			return fmt.Errorf("action at index %d in sequence file %s must have the name field set", index, s.filename)
+		}
+	}
+
+	return nil
 }
 
 func (s *Sequence) CountExecutionSteps() int {
@@ -84,6 +114,10 @@ func LoadSequence(filename string) (*Sequence, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sequence file %s contained bad yaml data\n%w", filename, err)
 	}
+	s.filename = filename
+	if err := s.Validate(); err != nil {
+		return nil, err
+	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -101,6 +135,10 @@ func LoadSequence(filename string) (*Sequence, error) {
 			if err != nil {
 				return nil, fmt.Errorf("unable to load sub sequence at %s\n%w", importPath, err)
 			}
+			s.SubSequence.filename = importPath
+			if err := s.SubSequence.Validate(); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -111,11 +149,14 @@ type ExecutionInstance struct {
 	config               *config.Config
 	hostIdent            string
 	hostConfig           *config.HostConfig
-	executionClient      *cmdsession.ExecutionClient
+	executionClient      cmdsession.ExecutionClient
 	sequence             *Sequence
 	totalExecutionSteps  int
 	executionStack       []SeqPos
 	currentExecutionStep int
+
+	varContext  *kvstore.Store // variable context
+	execContext *kvstore.Store // context accumulated through execution ()
 }
 
 func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) *ExecutionInstance {
@@ -123,10 +164,21 @@ func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClie
 		config:              config,
 		hostIdent:           hostIdent,
 		hostConfig:          config.Hosts[hostIdent],
-		executionClient:     &executionClient,
+		executionClient:     executionClient,
 		sequence:            s,
 		totalExecutionSteps: s.CountExecutionSteps(),
+		varContext:          kvstore.NewStore(),
+		execContext:         kvstore.NewStore(),
 	}
+}
+
+func (ei *ExecutionInstance) GetCurrentNamespace() []string {
+	var curNs []string
+	for _, s := range ei.executionStack {
+		curNs = append(curNs, s.Sequence.Name)
+	}
+
+	return curNs
 }
 
 func (ei *ExecutionInstance) HasMore() bool {
@@ -184,5 +236,59 @@ func (ei *ExecutionInstance) Next() *Action {
 }
 
 func (ei *ExecutionInstance) Execute(action *Action) error {
+	parentNamespace := ei.GetCurrentNamespace()
+	var actionFqNamespace []string
+	actionFqNamespace = append(actionFqNamespace, parentNamespace...)
+	actionFqNamespace = append(actionFqNamespace, action.Name)
+
+	if action.Iterable {
+
+	}
+
+	// Name           string    `yaml:"name"` // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
+	// Description         string    `yaml:"description"`
+	// Iterable            string    `yaml:"iterable"`            // if an iterable is provided, it will be iterated and the child action will be called for each element
+	// Import              string    `yaml:"import"`              // if specified, the action/sequence is imported from a location relative to the top level config.yaml
+	// When                string    `yaml:"when"`                // conditional expression which must evaluate to true, in order for the action or loop to be executed
+	// FailWhen            string    `yaml:"failWhen"`            // conditional expression which when evaluating to true indicates a failure (failures are otherwise implicit to command execution return codes)
+	// StoreSuccessAsTrue  bool      `yaml:"storeSuccessAsTrue"`  // stores a success as true and a failure as false, implies that a failure does not cancel execution of the next action
+	// StoreSuccessAsFalse bool      `yaml:"storeSuccessAsFalse"` // stores a success as false and a failure as true, implies that a failure does not cancel execution of the next action
+	// Until               *Until    `yaml:"until"`               // execute action until the condition evaluates to true
+	// Action              *Action   `yaml:"action"`              // action to be executed if an iterable is present as well
+	// ParseJson           bool      `yaml:"parseJson"`           // processes the standard output as JSON and makes the data available on the .kv context of the action
+	// ParseYaml           bool      `yaml:"parseYaml"`           // processes the standard output as YAML and makes the data available on the .kv context of the action
+	// Su                  string    `yaml:"su"`                  // switch to the following user (can be a name or base 10 string of a numeric id)
+	// Sudo                bool      `yaml:"sudo"`                // run the command as root
+	// SubSequence         *Sequence `yaml:"subSequence"`         // sub sequence if imported
+
+	// these properties are independent action properties, mutually exclusive
+	// Exec  []string `yaml:"exec"`  // execute a command
+	// Shell string   `yaml:"shell"` // execute a command using sh
+	// Sync  *Sync    `yaml:"sync"`  // sync files from local to remote
+
 	return nil
+}
+
+// executeSingleAction performs the action execution, returning the output, exit code, and or any error
+func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, error) {
+	execStr, ok := action.GetExecutionString()
+	if ok {
+		// create a new command session
+		sess, err := ei.executionClient.NewCmdSession()
+		if err != nil {
+			return nil, 0, err
+		}
+
+		output, err := sess.Execute(execStr)
+		if err != nil {
+			exitCode, hasExitCode := cmdsession.GetExitCode(err)
+			if !hasExitCode {
+				return nil, 0, err
+			}
+
+			return output, exitCode, nil
+		}
+
+		return output, 0, nil
+	}
 }
