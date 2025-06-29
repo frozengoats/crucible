@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -21,11 +22,11 @@ type SeqPos struct {
 }
 
 type Sync struct {
-	Local     string `yaml:"local"`     // local resource(s) to sync to remote
-	Remote    string `yaml:"remote"`    // remote location to sync to
-	FilePerms string `yaml:"filePerms"` // permissions to apply to all files
-	DirPerms  string `yaml:"dirPerms"`  // permissions to apply to all directories
-	Owner     string `yaml:"owner"`     // ownership to apply to all files and directories
+	Local         string `yaml:"local"`         // local resource(s) to sync to remote
+	Remote        string `yaml:"remote"`        // remote location to sync to
+	PreserveOwner bool   `yaml:"preserveOwner"` // preserve ownership
+	PreservePerms bool   `yaml:"preservePerms"` // preserve file permissions
+	PreserveGroup bool   `yaml:"preserveGroup"` // preserve group
 }
 
 type Until struct {
@@ -241,9 +242,9 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	actionFqNamespace = append(actionFqNamespace, parentNamespace...)
 	actionFqNamespace = append(actionFqNamespace, action.Name)
 
-	if action.Iterable {
+	// if action.Iterable {
 
-	}
+	// }
 
 	// Name           string    `yaml:"name"` // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
 	// Description         string    `yaml:"description"`
@@ -273,22 +274,46 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, error) {
 	execStr, ok := action.GetExecutionString()
 	if ok {
-		// create a new command session
-		sess, err := ei.executionClient.NewCmdSession()
-		if err != nil {
+		return ei.executeRemoteCommand(execStr)
+	}
+
+	// if the code gets to this point, it's a sync
+	if action.Sync != nil {
+		return nil, 0, ei.sync(action)
+	}
+
+	return nil, 0, fmt.Errorf("unknown action execution")
+}
+
+func (ei *ExecutionInstance) executeRemoteCommand(commandStr string) ([]byte, int, error) {
+	// create a new command session
+	sess, err := ei.executionClient.NewCmdSession()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	output, err := sess.Execute(commandStr)
+	if err != nil {
+		exitCode, hasExitCode := cmdsession.GetExitCode(err)
+		if !hasExitCode {
 			return nil, 0, err
 		}
 
-		output, err := sess.Execute(execStr)
-		if err != nil {
-			exitCode, hasExitCode := cmdsession.GetExitCode(err)
-			if !hasExitCode {
-				return nil, 0, err
-			}
-
-			return output, exitCode, nil
-		}
-
-		return output, 0, nil
+		return output, exitCode, nil
 	}
+
+	return output, 0, nil
+}
+
+func (ei *ExecutionInstance) sync(action *Action) error {
+	syncAction := action.Sync
+	cmd := exec.Command("rsync", syncAction.Local, fmt.Sprintf("%s@%s:%s", ei.config.User.Username, ei.hostConfig.Host, syncAction.Remote))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

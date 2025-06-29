@@ -3,7 +3,6 @@ package executor
 import (
 	"fmt"
 	"net"
-	"os/user"
 	"sync"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
@@ -42,11 +41,6 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		return nil, fmt.Errorf("no ssh key was specified both at top level or for host identity \"%s\"", hostIdent)
 	}
 
-	u, err := user.Current()
-	if err != nil {
-		return nil, fmt.Errorf("unable to ascertain current user\n%w", err)
-	}
-
 	addrs, err := net.LookupIP(hostConfig.Host)
 	if err != nil {
 		return nil, fmt.Errorf("problem resolving hostname: %s\n%w", hostConfig.Host, err)
@@ -65,7 +59,7 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 	if isLoopback {
 		executionClient = cmdsession.NewLocalExecutionClient()
 	} else {
-		executionClient = ssh.NewSsh(hostConfig.Host, u.Username, sshKeyPath,
+		executionClient = ssh.NewSsh(hostConfig.Host, cfg.User.Username, sshKeyPath,
 			ssh.WithIgnoreHostKeyChangeOption(cfg.Executor.Ssh.IgnoreHostKeyChange),
 			ssh.WithAllowUnknownHostsOption(cfg.Executor.Ssh.AllowUnknownHosts),
 			ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),

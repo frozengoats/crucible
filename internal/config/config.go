@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os/user"
 	"path/filepath"
 
 	"github.com/frozengoats/crucible/internal/defaults"
@@ -29,11 +30,17 @@ type HostConfig struct {
 	Context    map[string]any `yaml:"context"`    // generic k/v storage for data to be referenced later
 }
 
+type UserConfig struct {
+	Username string
+	HomeDir  string
+}
+
 type Config struct {
 	// keys are unique host identifiers, though they themselves have no meaning
 	Executor    Executor               `yaml:"executor"`
 	Hosts       map[string]*HostConfig `yaml:"hosts"`
 	ValuesStore *kvstore.Store
+	User        *UserConfig
 }
 
 func FromFilePaths(cwd string, stackPaths ...string) (*Config, error) {
@@ -65,6 +72,14 @@ func FromFilePaths(cwd string, stackPaths ...string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to apply defaults to config\n%w", err)
 	}
+
+	c.User = &UserConfig{}
+	u, err := user.Current()
+	if err != nil {
+		return nil, fmt.Errorf("unable to ascertain current user\n%w", err)
+	}
+	c.User.Username = u.Username
+	c.User.HomeDir = u.HomeDir
 
 	return c, nil
 }

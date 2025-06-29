@@ -30,6 +30,50 @@ var (
 	CompletionFile string = filepath.Join(ContainerUnixSocketDir, "complete")
 )
 
+var dirName = "/tmp/rsync_test"
+
+func touch(path string) error {
+	return os.WriteFile(path, []byte{}, 0o777)
+}
+
+func prepTestEnvironment() error {
+	_ = os.RemoveAll(dirName)
+	err := os.MkdirAll(dirName, 0o777)
+	if err != nil {
+		return err
+	}
+
+	err = os.MkdirAll(filepath.Join(dirName, "sub1_a", "sub2_a"), 0o777)
+	if err != nil {
+		return err
+	}
+
+	err = os.MkdirAll(filepath.Join(dirName, "sub1_b", "sub2_a"), 0o777)
+	if err != nil {
+		return err
+	}
+
+	err = os.MkdirAll(filepath.Join(dirName, "sub1_b", "sub2_b"), 0o777)
+	if err != nil {
+		return err
+	}
+
+	files := []string{
+		filepath.Join(dirName, "file.txt"),
+		filepath.Join(dirName, "sub1_a", "file.txt"),
+		filepath.Join(dirName, "sub1_a", "file1.txt"),
+		filepath.Join(dirName, "sub1_b", "sub2_b", "file.txt"),
+	}
+	for _, f := range files {
+		err := touch(f)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 type SshTestSuite struct {
 	suite.Suite
 
@@ -191,6 +235,27 @@ func (suite *SshTestSuite) TestKeyWithPassphrase() {
 	sshSession = NewSsh(suite.sshHost, "test", privKey, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("")))
 	defer sshSession.Close()
 	err = sshSession.Connect()
+	suite.NoError(err)
+}
+
+func (suite *SshTestSuite) TestRsyncNoPassphrase() {
+	// prepare ssh session
+	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519"))
+	suite.NoError(err)
+
+	// allow the unknown host to be connected to
+	sshSession := NewSsh(suite.sshHost, "test", privKey, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
+	defer sshSession.Close()
+
+	err = sshSession.Connect()
+	suite.NoError(err)
+	err = sshSession.Close()
+	suite.NoError(err)
+
+	err = prepTestEnvironment()
+	suite.NoError(err)
+
+	err = Rsync("test", suite.sshHost, privKey, "/tmp/rsync_test", "/tmp/target", "-o", fmt.Sprintf("UserKnownHostsFile=%s", KnownHostsFile))
 	suite.NoError(err)
 }
 

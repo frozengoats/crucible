@@ -2,7 +2,7 @@
 set -e
 
 addgroup -S test
-adduser -S test -G test
+adduser -S -s /bin/sh test -G test
 sed -i "s/^test:!:/test:\*/" /etc/shadow
 echo "test ALL=(ALL) ALL" >> /etc/sudoers
 
