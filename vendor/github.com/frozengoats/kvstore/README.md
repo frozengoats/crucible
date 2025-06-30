@@ -23,10 +23,6 @@ while setting data is simple, taking the form of `Set(<value>, namespace...)`, d
 
 Constructing from json
 ```
-import (
-  "github.com/frozengoats/kvstore"
-)
-
 // create an object
 m := map[string]any{}
 json.Unmarshal(data, &m)
@@ -43,10 +39,6 @@ firstName := s.GetString("person", "first_name")
 
 Overlaying stores
 ```
-import (
-  "github.com/frozengoats/kvstore"
-)
-
 base := kvstore.NewStore()
 ovl := kvstore.NewStore()
 
@@ -59,3 +51,29 @@ if err != nil {
 
 // final now contains a new copy of the contents of base, with a copy of the contents of ovl on top.  the new copy is a deep copy.
 ```
+
+Returning nested stores
+
+```
+// any nested mapping can be returned as a store, or array of stores (in the case of arrays of mappings)
+s := kvstore.GetStore("x", "y", "z")
+
+// or in the case of store arrays
+
+s := kvstore.GetStoreArray("x", "y", "z")
+```
+
+Lookup by key as well as accessing arrays by index
+
+```
+// a data structure containing an array can be accessed by index
+// if `s` is a store:
+
+x := s.GetInt("x", "y", 3, "z")
+
+// this would access the key x, then the subkey y, then the 4th array element (assuming an array), then the key z, on that array item.
+// we can also use the following access notation to achieve the same result:
+
+x := s.GetInt(ParseNamespaceString("x.y[3].z"))
+```
+

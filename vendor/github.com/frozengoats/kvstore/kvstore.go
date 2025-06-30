@@ -1,6 +1,26 @@
 package kvstore
 
-import "fmt"
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+var indexIdentifier = regexp.MustCompile(`([^[]+)\[(\d+)\]`)
+
+func parseArrayKey(test string) (string, int, bool) {
+	match := indexIdentifier.FindAllStringSubmatch(test, -1)
+	if len(match) == 0 {
+		return "", 0, false
+	}
+	index, err := strconv.ParseInt(match[0][2], 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+
+	return match[0][1], int(index), true
+}
 
 func reCastStringArray(value []string) []any {
 	newArr := make([]any, len(value))
@@ -164,25 +184,38 @@ func FromMapping(mapping map[string]any) (*Store, error) {
 
 // get traverses the store and attempts to retrieve value indicated by the hierarchical
 // namespace.
-func (s *Store) get(namespace ...string) (any, bool) {
-	root := s.data
+func (s *Store) get(namespace ...any) (any, bool) {
+	var root any
+
+	root = s.data
 	total_ns_keys := len(namespace)
 	for i, ns := range namespace {
-		next, ok := root[ns]
-		if !ok {
+		switch nsTyped := ns.(type) {
+		case string:
+			rootMap, ok := root.(map[string]any)
+			if !ok {
+				return nil, false
+			}
+			root, ok = rootMap[nsTyped]
+			if !ok {
+				return nil, false
+			}
+		case int:
+			rootSlice, ok := root.([]any)
+			if !ok {
+				return nil, false
+			}
+			if nsTyped < 0 || nsTyped >= len(rootSlice) {
+				return nil, false
+			}
+			root = rootSlice[nsTyped]
+		default:
 			return nil, false
 		}
 
 		// if this is the final namespace key, return the value
 		if i == total_ns_keys-1 {
-			return next, true
-		}
-
-		switch t := next.(type) {
-		case map[string]any:
-			root = t
-		default:
-			return nil, false
+			return root, true
 		}
 	}
 
@@ -193,19 +226,20 @@ func (s *Store) get(namespace ...string) (any, bool) {
 // Get attempts to return the value stored at namespace, where namespace is a
 // hierarchical ordered list of keys nested from left at the root, to right.
 // If the value does NOT exist, a nil interface will be returned.
-func (s *Store) Get(namespace ...string) any {
+func (s *Store) Get(namespace ...any) any {
 	v, _ := s.get(namespace...)
 	return v
 }
 
-func (s *Store) Exists(namespace ...string) bool {
+func (s *Store) Exists(namespace ...any) bool {
 	_, ok := s.get(namespace...)
 	return ok
 }
 
 // Set sets a value in the store at the hierarchical position indicated by namespace,
 // creating or modifying (destructively) the hierarchy in order to support the operation.
-func (s *Store) Set(value any, namespace ...string) error {
+func (s *Store) Set(value any, namespace ...any) error {
+	var root any
 	if len(namespace) < 1 {
 		return fmt.Errorf("must provide at least 1 level of namespacing")
 	}
@@ -246,34 +280,62 @@ func (s *Store) Set(value any, namespace ...string) error {
 		value = v
 	}
 
-	root := s.data
+	root = s.data
 	total_ns_keys := len(namespace)
 	for i, ns := range namespace {
 		if i == total_ns_keys-1 {
-			root[ns] = value
+			switch nsTyped := ns.(type) {
+			case string:
+				rootMap, ok := root.(map[string]any)
+				if !ok {
+					return fmt.Errorf("attempted to set a key on a non-mapping type location")
+				}
+				rootMap[nsTyped] = value
+			case int:
+				rootSlice, ok := root.([]any)
+				if !ok {
+					return fmt.Errorf("attempted to set a value by index on a non-array type location")
+				}
+				if nsTyped < 0 || nsTyped >= len(rootSlice) {
+					return fmt.Errorf("index error on final destination value")
+				}
+				rootSlice[nsTyped] = value
+			}
 			return nil
 		}
 
-		next, ok := root[ns]
-		if ok {
-			switch t := next.(type) {
-			case map[string]any:
-				root = t
+		switch nsTyped := ns.(type) {
+		case string:
+			rootMap, ok := root.(map[string]any)
+			if !ok {
+				return fmt.Errorf("attempted to set a key on a non-mapping type location")
+			}
+			next, ok := rootMap[nsTyped]
+			if ok {
+				root = next
 				continue
 			}
-		}
 
-		// if type changed or a node was unavailable, add a new node
-		newNode := map[string]any{}
-		root[ns] = newNode
-		root = newNode
+			newNode := map[string]any{}
+			rootMap[nsTyped] = newNode
+			root = newNode
+		case int:
+			rootSlice, ok := root.([]any)
+			if !ok {
+				return fmt.Errorf("attempted to set a value by index on a non-array type location")
+			}
+			if nsTyped < 0 || nsTyped >= len(rootSlice) {
+				return fmt.Errorf("index error on array")
+			}
+			root = rootSlice[nsTyped]
+		}
 	}
 
 	return nil
 }
 
 // GetMapping retrieves a mapping value from the store at namespace or nil
-func (s *Store) GetMapping(namespace ...string) map[string]any {
+func (s *Store) GetMapping(namespace ...any) map[string]any {
 	v, ok := s.get(namespace...)
 	if !ok {
 		return nil
@@ -285,9 +347,25 @@ func (s *Store) GetMapping(namespace ...string) map[string]any {
 	return mp
 }
 
+// GetStore retrieves a mapping value from the store and returns a new store object.  A copy
+// is not made, and no additonal validation is performed, this is a fast operation.
+func (s *Store) GetStore(namespace ...any) *Store {
+	v, ok := s.get(namespace...)
+	if !ok {
+		return nil
+	}
+	mp, ok := v.(map[string]any)
+	if !ok {
+		return NewStore()
+	}
+	return &Store{
+		data: mp,
+	}
+}
+
 // GetInt retrieves an integer value from the store at namespace or the zero value
 // if it cannot be located
-func (s *Store) GetInt(namespace ...string) int {
+func (s *Store) GetInt(namespace ...any) int {
 	var value int
 	v, ok := s.get(namespace...)
 	if !ok {
@@ -304,7 +382,7 @@ func (s *Store) GetInt(namespace ...string) int {
 
 // GetFloat retrieves a float value from the store at namespace or the zero value
 // if it cannot be located
-func (s *Store) GetFloat(namespace ...string) float64 {
+func (s *Store) GetFloat(namespace ...any) float64 {
 	var value float64
 	v, ok := s.get(namespace...)
 	if !ok {
@@ -321,7 +399,7 @@ func (s *Store) GetFloat(namespace ...string) float64 {
 
 // GetString retrieves a string value from the store at namespace or the zero value
 // if it cannot be located
-func (s *Store) GetString(namespace ...string) string {
+func (s *Store) GetString(namespace ...any) string {
 	var value string
 	v, ok := s.get(namespace...)
 	if !ok {
@@ -338,7 +416,7 @@ func (s *Store) GetString(namespace ...string) string {
 
 // GetBool retrieves a boolean value from the store at namespace or the zero value
 // if it cannot be located
-func (s *Store) GetBool(namespace ...string) bool {
+func (s *Store) GetBool(namespace ...any) bool {
 	var value bool
 	v, ok := s.get(namespace...)
 	if !ok {
@@ -355,7 +433,7 @@ func (s *Store) GetBool(namespace ...string) bool {
 
 // GetArray retrieves an array value from the store at namespace or the zero value
 // if it cannot be located.  The zero value for an array is nil
-func (s *Store) GetArray(namespace ...string) []any {
+func (s *Store) GetArray(namespace ...any) []any {
 	var value []any
 	v, ok := s.get(namespace...)
 	if !ok {
@@ -372,7 +450,7 @@ func (s *Store) GetArray(namespace ...string) []any {
 
 // GetMappingArray retrieves a mapping array value from the store at namespace or the zero value
 // if it cannot be located.  The zero value for an array is nil
-func (s *Store) GetMappingArray(namespace ...string) []map[string]any {
+func (s *Store) GetMappingArray(namespace ...any) []map[string]any {
 	var value []map[string]any
 	v, ok := s.get(namespace...)
 	if !ok {
@@ -389,7 +467,7 @@ func (s *Store) GetMappingArray(namespace ...string) []map[string]any {
 
 // GetStringArray retrieves and re-casts a string array value from the store at namespace or the zero value
 // if it cannot be located.  The zero value for an array is nil
-func (s *Store) GetStringArray(namespace ...string) []string {
+func (s *Store) GetStringArray(namespace ...any) []string {
 	var empty []string
 	var value []string
 	v, ok := s.get(namespace...)
@@ -415,7 +493,7 @@ func (s *Store) GetStringArray(namespace ...string) []string {
 
 // GetIntArray retrieves and re-casts an integer array value from the store at namespace or the zero value
 // if it cannot be located.  The zero value for an array is nil
-func (s *Store) GetIntArray(namespace ...string) []int {
+func (s *Store) GetIntArray(namespace ...any) []int {
 	var empty []int
 	var value []int
 	v, ok := s.get(namespace...)
@@ -441,7 +519,7 @@ func (s *Store) GetIntArray(namespace ...string) []int {
 
 // GetFloatArray retrieves and re-casts a float64 array value from the store at namespace or the zero value
 // if it cannot be located.  The zero value for an array is nil
-func (s *Store) GetFloatArray(namespace ...string) []float64 {
+func (s *Store) GetFloatArray(namespace ...any) []float64 {
 	var empty []float64
 	var value []float64
 	v, ok := s.get(namespace...)
@@ -465,6 +543,36 @@ func (s *Store) GetFloatArray(namespace ...string) []float64 {
 	return value
 }
 
+// GetStoreArray is a convenient way of returning an array of mappings as an array of Store objects.
+// Returning store objects allows for further processing without the overhead of the initial validation
+// when constructing a new object from an external data source.  If the original data is not an array of
+// mappings then an empty array will be returned.
+func (s *Store) GetStoreArray(namespace ...any) []*Store {
+	var empty []*Store
+	var value []*Store
+	v, ok := s.get(namespace...)
+	if !ok {
+		return empty
+	}
+
+	t, ok := v.([]any)
+	if !ok {
+		return empty
+	}
+
+	value = make([]*Store, len(t))
+	for i, v := range t {
+		finalV, ok := v.(map[string]any)
+		if !ok {
+			return empty
+		}
+		value[i] = &Store{
+			data: finalV,
+		}
+	}
+	return value
+}
+
 // Overlay returns a new store object which overlays the provided store onto this store
 // This method isn't designed for high efficiency, but rather high code maintainability - for
 // this reason the entire base is copied before determining which keys are actually needed in the final overlay
@@ -473,4 +581,21 @@ func (s *Store) Overylay(ovl *Store) (*Store, error) {
 	overlayMap := deepCopyMap(ovl.data)
 	copyOver(newMap, overlayMap)
 	return FromMapping(newMap)
+}
+
+// ParseKey returns a namespace array from a namespace string
+func (s *Store) ParseNamespaceString(key string) []any {
+	var keys []any
+	keyParts := strings.Split(key, ".")
+	for _, kp := range keyParts {
+		key, index, ok := parseArrayKey(kp)
+		if !ok {
+			keys = append(keys, kp)
+		} else {
+			keys = append(keys, key)
+			keys = append(keys, index)
+		}
+	}
+
+	return keys
 }
