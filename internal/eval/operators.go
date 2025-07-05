@@ -216,6 +216,13 @@ func PlusOp(a any, b any) (any, error) {
 		default:
 			return nil, fmt.Errorf("%v and %v are incompatible types for addition/concatenation", a, b)
 		}
+	case []any:
+		switch bT := b.(type) {
+		case []any:
+			return append(aT, bT...), nil
+		default:
+			return nil, fmt.Errorf("%v and %v are incompatible types for addition/concatenation", a, b)
+		}
 	default:
 		return nil, fmt.Errorf("%v and %v are incompatible types for addition/concatenation", a, b)
 	}
