@@ -8,7 +8,7 @@ require (
 	github.com/alecthomas/kong v1.10.0
 	github.com/docker/docker v28.0.1+incompatible
 	github.com/docker/go-connections v0.5.0
-	github.com/frozengoats/kvstore v0.1.0
+	github.com/frozengoats/kvstore v0.1.1
 	github.com/goccy/go-yaml v1.17.1
 	github.com/skeema/knownhosts v1.3.1
 	github.com/stretchr/testify v1.10.0

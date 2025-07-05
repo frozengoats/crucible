@@ -75,5 +75,10 @@ x := s.GetInt("x", "y", 3, "z")
 // we can also use the following access notation to achieve the same result:
 
 x := s.GetInt(ParseNamespaceString("x.y[3].z"))
+
+// lastly, negative index values can be used to access values starting from the end of the array, whereby -1, is the last value,
+// -2 is the second last, and so on
+
+x := s.GetInt(ParseNamespaceString("x.y[-1]"))
 ```
 

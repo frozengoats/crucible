@@ -7,13 +7,14 @@ import (
 	"strings"
 )
 
-var indexIdentifier = regexp.MustCompile(`([^[]+)\[(\d+)\]`)
+var indexIdentifier = regexp.MustCompile(`([^[]+)\[(-?\d+)\]`)
 
 func parseArrayKey(test string) (string, int, bool) {
 	match := indexIdentifier.FindAllStringSubmatch(test, -1)
 	if len(match) == 0 {
 		return "", 0, false
 	}
+
 	index, err := strconv.ParseInt(match[0][2], 10, 64)
 	if err != nil {
 		return "", 0, false
@@ -205,8 +206,15 @@ func (s *Store) get(namespace ...any) (any, bool) {
 			if !ok {
 				return nil, false
 			}
-			if nsTyped < 0 || nsTyped >= len(rootSlice) {
+			if nsTyped >= len(rootSlice) {
 				return nil, false
+			}
+
+			if nsTyped < 0-len(rootSlice) {
+				return nil, false
+			}
+			if nsTyped < 0 {
+				nsTyped = len(rootSlice) + nsTyped
 			}
 			root = rootSlice[nsTyped]
 		default:
