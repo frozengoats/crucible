@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/frozengoats/crucible/internal/config"
@@ -158,6 +159,7 @@ type ExecutionInstance struct {
 
 	varContext  *kvstore.Store // variable context
 	execContext *kvstore.Store // context accumulated through execution ()
+	lock        sync.Mutex
 }
 
 func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) *ExecutionInstance {
@@ -183,10 +185,17 @@ func (ei *ExecutionInstance) GetCurrentNamespace() []string {
 }
 
 func (ei *ExecutionInstance) HasMore() bool {
+	ei.lock.Lock()
+	defer ei.lock.Unlock()
+
 	return ei.currentExecutionStep < ei.totalExecutionSteps
 }
 
+// Next returns the next unexecuted action in the sequence, or nil if none remain
 func (ei *ExecutionInstance) Next() *Action {
+	ei.lock.Lock()
+	defer ei.lock.Unlock()
+
 	var stackIndex int
 	var stackItem *SeqPos
 	started := false
@@ -241,6 +250,8 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	var actionFqNamespace []string
 	actionFqNamespace = append(actionFqNamespace, parentNamespace...)
 	actionFqNamespace = append(actionFqNamespace, action.Name)
+
+	actionNamespace := action.Name
 
 	// if action.Iterable {
 

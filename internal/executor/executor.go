@@ -103,73 +103,55 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 
 	syncExecutionSteps := configObj.Executor.SyncExecutionSteps
 
+	// start up the executing threads and standby until executions are queued below
 	execWaitGroup := &sync.WaitGroup{}
 	execChan := make(chan *Executor, maxConcurrentHosts)
 	errChan := make(chan error, len(hostIdents))
 	for range maxConcurrentHosts {
 		go func() {
+			// channel is closed when all executions have completed or an error is encountered, loop will
+			// exit automatically on last item
 			for e := range execChan {
-				if syncExecutionSteps {
-					action := e.ExecutionInstance.Next()
-				} else {
-					action := e.ExecutionInstance.Next()
-				}
+				func() {
+					// closure allows this block to execute and signal completion using the wait group which
+					// is incremented for every executor being enqueued (once per action in the case of sync)
+					defer execWaitGroup.Done()
+					for {
+						action := e.ExecutionInstance.Next()
+						if action == nil {
+							// no more actions, process the next thing
+							break
+						}
 
-				defer execWaitGroup.Done()
+						// execute the action here
+						err := e.ExecutionInstance.Execute(action)
 
-				// execute the action
-
+						if syncExecutionSteps {
+							// break after this execution if
+							break
+						}
+					}
+				}()
 			}
 		}()
 	}
 
-	if configObj.Executor.SyncExecutionSteps {
-		hasMore := true
-		for hasMore {
-			hasMore = false
-			for _, e := range executors {
-				if e.ExecutionInstance.HasMore() {
-					hasMore = true
-					execWaitGroup.Add(1)
-					execChan <- e
-				}
-			}
-
-			// wait until all goroutines are finished
-			execWaitGroup.Wait()
-
-			// pull errors from error channel
-			errChanLen := len(errChan)
-			for range errChanLen {
-				err := <-errChan
-				fmt.Printf("%s\n", err)
-			}
-			if errChanLen > 0 {
-				close(execChan)
-				return fmt.Errorf("sequence aborted due to one or more failures")
-			}
-		}
-		close(execChan)
-	} else {
+	// start queueing executions
+	hasMore := true
+	for hasMore {
 		for _, e := range executors {
-			execWaitGroup.Add(1)
-			execChan <- e
+			if e.ExecutionInstance.HasMore() {
+				execWaitGroup.Add(1)
+				hasMore = true
+				execChan <- e
+			}
 		}
-
-		// wait until all goroutines are finished
+		// the wait group ensures that IF this is operating in sync mode, that the next wave of processing
+		// will not start for any execution instance until the previous wave is completed.  in the case of
+		// non sync mode, a single loop will indicate completion of all hosts.
 		execWaitGroup.Wait()
-
-		// pull errors from error channel
-		errChanLen := len(errChan)
-		for range errChanLen {
-			err := <-errChan
-			fmt.Printf("%s\n", err)
-		}
-		if errChanLen > 0 {
-			close(execChan)
-			return fmt.Errorf("sequence aborted due to one or more failures")
-		}
 	}
+	close(execChan)
 
 	return nil
 }
