@@ -3,6 +3,7 @@ package eval
 import (
 	"testing"
 
+	"github.com/frozengoats/kvstore"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -95,4 +96,52 @@ func TestTokenizerParenthGroup(t *testing.T) {
 	assert.Equal(t, TokenTypeVariable, subTok[0].Type)
 	assert.Equal(t, TokenTypeOperator, subTok[1].Type)
 	assert.Equal(t, TokenTypeNumber, subTok[2].Type)
+}
+
+func TestEvaluateSimpleExpression(t *testing.T) {
+	exp := "strip('  abc def  ') + ' ghi'"
+	result, err := Evaluate(exp, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "abc def ghi", result)
+}
+
+func TestEvaluateNestedExpression(t *testing.T) {
+	exp := "100 * ((2 + 3) / 5) + 17"
+	result, err := Evaluate(exp, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 117.0, result)
+}
+
+func TestEvaluateNestedQuotedExpression(t *testing.T) {
+	exp := "strip(('  abc ' + ('def ' + 'ghi')) + ' jkl  ')"
+	result, err := Evaluate(exp, nil, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, "abc def ghi jkl", result)
+}
+
+func TestEvaluateExpressionWithVariables(t *testing.T) {
+	values := kvstore.NewStore()
+	values.Set([]any{100, 101, 102}, "abc", "def")
+	exp := ".Values.abc.def[1]"
+	result, err := Evaluate(exp, values, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 101., result)
+}
+
+func TestEvaluateExpressionWithNestedVariables(t *testing.T) {
+	values := kvstore.NewStore()
+	values.Set([]any{100, 101, 102}, "abc", "def")
+	exp := "len(.Values.abc.def) + 10"
+	result, err := Evaluate(exp, values, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 13., result)
+}
+
+func TestEvaluateExpressionDontProcessQuotedVars(t *testing.T) {
+	values := kvstore.NewStore()
+	values.Set([]any{100, 101, 102}, "abc", "def")
+	exp := "len('.Values.abc.def') + 10"
+	result, err := Evaluate(exp, values, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, 25., result)
 }

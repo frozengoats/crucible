@@ -85,6 +85,15 @@ type Group struct {
 	Type GroupType
 }
 
+func CastToNumberIfApplicable(value any) any {
+	switch t := value.(type) {
+	case int:
+		return float64(t)
+	default:
+		return value
+	}
+}
+
 func (g *Group) EmitTokens() ([]*Token, error) {
 	var tokens []*Token
 
@@ -201,17 +210,18 @@ type Token struct {
 }
 
 // simplify traverses the token in a depth-first order and evaluates the result
-func (t *Token) evaluate() (any, error) {
+func (t *Token) evaluate(values *kvstore.Store, kvContext *kvstore.Store) (any, error) {
 	var curVal any
 	var prevToken = &Token{
 		Type: TokenTypeOperator,
 	}
 
-	if t.Type == TokenTypeFunction {
+	switch t.Type {
+	case TokenTypeFunction:
 		var args []any
 		for _, token := range t.Tokens {
 			// these are function arguments in this case, they need to be simplified but
-			v, err := token.evaluate()
+			v, err := token.evaluate(values, kvContext)
 			if err != nil {
 				return nil, err
 			}
@@ -221,6 +231,19 @@ func (t *Token) evaluate() (any, error) {
 
 		// execute the function call with the supplied arguments
 		return Call(t.Text, args)
+	case TokenTypeInferredString:
+		return t.Text, nil
+	case TokenTypeString:
+		return t.Text, nil
+	case TokenTypeNumber:
+		fl, _ := strconv.ParseFloat(t.Text, 64)
+		return fl, nil
+	case TokenTypeVariable:
+		if strings.HasPrefix(t.Text, ".Values.") {
+			return CastToNumberIfApplicable(values.Get(values.ParseNamespaceString(strings.TrimPrefix(t.Text, ".Values."))...)), nil
+		}
+
+		return CastToNumberIfApplicable(kvContext.Get(values.ParseNamespaceString(strings.TrimPrefix(t.Text, ".Context."))...)), nil
 	}
 
 	for _, token := range t.Tokens {
@@ -234,16 +257,15 @@ func (t *Token) evaluate() (any, error) {
 			continue
 		}
 
-		if token.Type == TokenTypeGroup || token.Type == TokenTypeFunction {
-			v, err := token.evaluate()
-			if err != nil {
-				return nil, err
-			}
-			value = v
+		v, e := token.evaluate(values, kvContext)
+		if e != nil {
+			return nil, e
 		}
+		value = v
 
 		if curVal == nil {
 			curVal = value
+			prevToken = token
 			continue
 		}
 
@@ -255,13 +277,39 @@ func (t *Token) evaluate() (any, error) {
 		switch prevToken.Text {
 		case OperatorEquals:
 			curVal, err = EqualsOp(curVal, value)
-			if err != nil {
-				return nil, err
-			}
+		case OperatorUnequals:
+			curVal, err = UnequalsOp(curVal, value)
+		case OperatorGreater:
+			curVal, err = GreaterThanOp(curVal, value)
+		case OperatorGreaterEquals:
+			curVal, err = GreaterThanEqualsOp(curVal, value)
+		case OperatorLess:
+			curVal, err = LessThanOp(curVal, value)
+		case OperatorLessEquals:
+			curVal, err = LessThanEqualsOp(curVal, value)
+		case OperatorAnd:
+			curVal, err = AndOp(curVal, value)
+		case OperatorOr:
+			curVal, err = OrOp(curVal, value)
+		case OperatorPlus:
+			curVal, err = PlusOp(curVal, value)
+		case OperatorMinus:
+			curVal, err = MinusOp(curVal, value)
+		case OperatorMultiply:
+			curVal, err = MultiplyOp(curVal, value)
+		case OperatorDivide:
+			curVal, err = DivideOp(curVal, value)
+		default:
+			return nil, fmt.Errorf("unknown operator %s", prevToken.Text)
 		}
+		if err != nil {
+			return nil, err
+		}
+
+		prevToken = token
 	}
 
-	return nil, nil
+	return curVal, nil
 }
 
 // GetValue returns a value from either of the context stores using identifier
@@ -291,7 +339,7 @@ func getGroups(expression string) ([]*Group, error) {
 
 	for i := range len(expression) {
 		c := expression[i]
-		if quoteChar == 0 && (c == DoubleQuote || c == SingleQuote) {
+		if quoteChar == 0 && (c == DoubleQuote || c == SingleQuote) && parenthCount == 0 {
 			quoteChar = c
 			if i-groupStart > 0 {
 				text := strings.Trim(expression[groupStart:i], " ")
@@ -443,15 +491,16 @@ func tokenize(expression string) (*Token, error) {
 
 	return &Token{
 		Type:   TokenTypeGroup,
-		Tokens: tokens,
+		Tokens: rectifiedTokens,
 	}, nil
 }
 
-// // Evaluate evaluates an expression to either true or false, or returns an error if the expression cannot
-// // be evaluated.
-// func Evaluate(expression string) (bool, error) {
-// 	tokenGroup, err := tokenize(expression)
-// 	if err != nil {
-// 		return false, err
-// 	}
-// }
+// Evaluate evaluates an expression to either true or false, or returns an error if the expression cannot
+// be evaluated.
+func Evaluate(expression string, values *kvstore.Store, kvContext *kvstore.Store) (any, error) {
+	tokenGroup, err := tokenize(expression)
+	if err != nil {
+		return false, err
+	}
+	return tokenGroup.evaluate(values, kvContext)
+}
