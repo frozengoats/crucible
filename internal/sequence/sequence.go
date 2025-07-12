@@ -1,6 +1,7 @@
 package sequence
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/frozengoats/crucible/internal/config"
+	"github.com/frozengoats/crucible/internal/functions"
+	"github.com/frozengoats/crucible/internal/log"
+	"github.com/frozengoats/eval"
 	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
 )
@@ -37,21 +41,20 @@ type Until struct {
 }
 
 type Action struct {
-	Name                string    `yaml:"name"` // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
-	Description         string    `yaml:"description"`
-	Iterable            string    `yaml:"iterable"`            // if an iterable is provided, it will be iterated and the child action will be called for each element
-	Import              string    `yaml:"import"`              // if specified, the action/sequence is imported from a location relative to the top level config.yaml
-	When                string    `yaml:"when"`                // conditional expression which must evaluate to true, in order for the action or loop to be executed
-	FailWhen            string    `yaml:"failWhen"`            // conditional expression which when evaluating to true indicates a failure (failures are otherwise implicit to command execution return codes)
-	StoreSuccessAsTrue  bool      `yaml:"storeSuccessAsTrue"`  // stores a success as true and a failure as false, implies that a failure does not cancel execution of the next action
-	StoreSuccessAsFalse bool      `yaml:"storeSuccessAsFalse"` // stores a success as false and a failure as true, implies that a failure does not cancel execution of the next action
-	Until               *Until    `yaml:"until"`               // execute action until the condition evaluates to true
-	Action              *Action   `yaml:"action"`              // action to be executed if an iterable is present as well
-	ParseJson           bool      `yaml:"parseJson"`           // processes the standard output as JSON and makes the data available on the .kv context of the action
-	ParseYaml           bool      `yaml:"parseYaml"`           // processes the standard output as YAML and makes the data available on the .kv context of the action
-	Su                  string    `yaml:"su"`                  // switch to the following user (can be a name or base 10 string of a numeric id)
-	Sudo                bool      `yaml:"sudo"`                // run the command as root
-	SubSequence         *Sequence `yaml:"subSequence"`         // sub sequence if imported
+	Name          string    `yaml:"name"`          // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
+	Description   string    `yaml:"description"`   // action description
+	Iterable      string    `yaml:"iterable"`      // if an iterable is provided, it will be iterated and the child action will be called for each element
+	Import        string    `yaml:"import"`        // if specified, the action/sequence is imported from a location relative to the top level config.yaml
+	When          string    `yaml:"when"`          // conditional expression which must evaluate to true, in order for the action or loop to be executed
+	FailWhen      string    `yaml:"failWhen"`      // conditional expression which when evaluating to true indicates a failure (failures are otherwise implicit to command execution return codes)
+	IgnoreFailure bool      `yaml:"ignoreFailure"` // ignores the exit code of an execution, so that it does not cause the sequence to terminate
+	Until         *Until    `yaml:"until"`         // execute action until the condition evaluates to true
+	Action        *Action   `yaml:"action"`        // action to be executed if an iterable is present as well
+	ParseJson     bool      `yaml:"parseJson"`     // processes the standard output as JSON and makes the data available on the .kv context of the action
+	ParseYaml     bool      `yaml:"parseYaml"`     // processes the standard output as YAML and makes the data available on the .kv context of the action
+	Su            string    `yaml:"su"`            // switch to the following user (can be a name or base 10 string of a numeric id)
+	Sudo          bool      `yaml:"sudo"`          // run the command as root
+	SubSequence   *Sequence `yaml:"subSequence"`   // sub sequence if imported
 
 	// these properties are independent action properties, mutually exclusive
 	Exec  []string `yaml:"exec"`  // execute a command
@@ -160,6 +163,8 @@ type ExecutionInstance struct {
 	varContext  *kvstore.Store // variable context
 	execContext *kvstore.Store // context accumulated through execution ()
 	lock        sync.Mutex
+
+	err error
 }
 
 func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) *ExecutionInstance {
@@ -175,6 +180,10 @@ func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClie
 	}
 }
 
+func (ei *ExecutionInstance) SetError(err error) {
+	ei.err = err
+}
+
 func (ei *ExecutionInstance) GetCurrentNamespace() []string {
 	var curNs []string
 	for _, s := range ei.executionStack {
@@ -188,6 +197,10 @@ func (ei *ExecutionInstance) HasMore() bool {
 	ei.lock.Lock()
 	defer ei.lock.Unlock()
 
+	if ei.err != nil {
+		return false
+	}
+
 	return ei.currentExecutionStep < ei.totalExecutionSteps
 }
 
@@ -195,6 +208,10 @@ func (ei *ExecutionInstance) HasMore() bool {
 func (ei *ExecutionInstance) Next() *Action {
 	ei.lock.Lock()
 	defer ei.lock.Unlock()
+
+	if ei.err != nil {
+		return nil
+	}
 
 	var stackIndex int
 	var stackItem *SeqPos
@@ -245,38 +262,140 @@ func (ei *ExecutionInstance) Next() *Action {
 	}
 }
 
-func (ei *ExecutionInstance) Execute(action *Action) error {
-	parentNamespace := ei.GetCurrentNamespace()
-	var actionFqNamespace []string
-	actionFqNamespace = append(actionFqNamespace, parentNamespace...)
-	actionFqNamespace = append(actionFqNamespace, action.Name)
+func (ei *ExecutionInstance) variableLookup(key string) (any, error) {
+	var store *kvstore.Store
+	if strings.HasPrefix(key, ".Values.") {
+		key = strings.TrimPrefix(key, ".Values.")
+		store = ei.varContext
+	} else {
+		key = strings.TrimPrefix(key, ".Context.")
+		store = ei.execContext
+	}
 
-	actionNamespace := action.Name
+	return store.Get(kvstore.ParseNamespaceString(key)...), nil
+}
 
-	// if action.Iterable {
+func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.Store) error {
+	context := []any{
+		"host", ei.hostIdent,
+	}
+	log.Info(context, "processing action \"%s\"", action.Description)
 
-	// }
+	// first, determine if the action should be executed or not
+	if action.When != "" {
+		// evaluate the when condition
+		whenResult, err := eval.Evaluate(action.When, ei.variableLookup, functions.Call)
+		if err != nil {
+			return fmt.Errorf("unable to evaluate when clause: %s\n%w", action.When, err)
+		}
 
-	// Name           string    `yaml:"name"` // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
-	// Description         string    `yaml:"description"`
-	// Iterable            string    `yaml:"iterable"`            // if an iterable is provided, it will be iterated and the child action will be called for each element
-	// Import              string    `yaml:"import"`              // if specified, the action/sequence is imported from a location relative to the top level config.yaml
-	// When                string    `yaml:"when"`                // conditional expression which must evaluate to true, in order for the action or loop to be executed
-	// FailWhen            string    `yaml:"failWhen"`            // conditional expression which when evaluating to true indicates a failure (failures are otherwise implicit to command execution return codes)
-	// StoreSuccessAsTrue  bool      `yaml:"storeSuccessAsTrue"`  // stores a success as true and a failure as false, implies that a failure does not cancel execution of the next action
-	// StoreSuccessAsFalse bool      `yaml:"storeSuccessAsFalse"` // stores a success as false and a failure as true, implies that a failure does not cancel execution of the next action
-	// Until               *Until    `yaml:"until"`               // execute action until the condition evaluates to true
-	// Action              *Action   `yaml:"action"`              // action to be executed if an iterable is present as well
-	// ParseJson           bool      `yaml:"parseJson"`           // processes the standard output as JSON and makes the data available on the .kv context of the action
-	// ParseYaml           bool      `yaml:"parseYaml"`           // processes the standard output as YAML and makes the data available on the .kv context of the action
-	// Su                  string    `yaml:"su"`                  // switch to the following user (can be a name or base 10 string of a numeric id)
-	// Sudo                bool      `yaml:"sudo"`                // run the command as root
-	// SubSequence         *Sequence `yaml:"subSequence"`         // sub sequence if imported
+		if !eval.IsTruthy(whenResult) {
+			log.Info(context, "skipping due to falsey when clause")
+			return nil
+		}
+	}
 
-	// these properties are independent action properties, mutually exclusive
-	// Exec  []string `yaml:"exec"`  // execute a command
-	// Shell string   `yaml:"shell"` // execute a command using sh
-	// Sync  *Sync    `yaml:"sync"`  // sync files from local to remote
+	if action.Iterable != "" {
+		iterableResult, err := eval.Evaluate(action.Iterable, ei.variableLookup, functions.Call)
+		if err != nil {
+			return fmt.Errorf("unable to evaluate interable attribute: %s\n%w", action.Iterable, err)
+		}
+
+		iterableArray, ok := iterableResult.([]any)
+		if !ok {
+			return fmt.Errorf("iterable attribute does not return an array")
+		}
+
+		for _, item := range iterableArray {
+			imContext := immediateContext.DeepCopy()
+			imContext.Set(item, "item")
+
+			err = ei.Execute(action.Action, imContext)
+			if err != nil {
+				return err
+			}
+		}
+
+		// since iterables call an internal action, once this is done, there's no continuing
+		return nil
+	}
+
+	// this for loop will break immediately unless an until clause is set
+	var stdout []byte
+	var exitCode int
+	var err error
+	untilAttempts := 0
+	for {
+		stdout, exitCode, err = ei.executeSingleAction(action)
+		if err != nil {
+			return err
+		}
+
+		immediateContext.Set(stdout, "stdout")
+		immediateContext.Set(exitCode, "exitCode")
+
+		if exitCode == 0 {
+			if action.ParseJson {
+				jsonMap := map[string]any{}
+				err = json.Unmarshal(stdout, &jsonMap)
+				if err != nil {
+					return fmt.Errorf("unable to unmarshal json from stdout: %w", err)
+				}
+				immediateContext.Set("json", jsonMap)
+			}
+
+			if action.ParseYaml {
+				yamlMap := map[string]any{}
+				err = yaml.Unmarshal(stdout, &yamlMap)
+				if err != nil {
+					return fmt.Errorf("unable to unmarshal yaml from stdout: %w", err)
+				}
+				immediateContext.Set("yaml", yamlMap)
+			}
+		}
+
+		if action.Until == nil {
+			break
+		}
+
+		untilResult, err := eval.Evaluate(action.Until.Condition, ei.variableLookup, functions.Call)
+		if err != nil {
+			return err
+		}
+		if eval.IsTruthy(untilResult) {
+			break
+		}
+
+		untilAttempts++
+		if untilAttempts >= action.Until.MaxAttempts {
+			return fmt.Errorf("maximum number of attempts occurred and until clause requirement was not met")
+		}
+	}
+
+	if exitCode != 0 {
+		if !action.IgnoreFailure {
+			return cmdsession.NewExitCodeError(exitCode)
+		}
+	}
+
+	// at this point it is safe to propagate all transient data to the context, if context names exist
+	if action.Name != "" {
+		parentNamespace := ei.GetCurrentNamespace()
+		var actionFqNamespace []string
+		actionFqNamespace = append(actionFqNamespace, parentNamespace...)
+		actionFqNamespace = append(actionFqNamespace, action.Name)
+		actionLocalNamespace := action.Name
+
+		err = ei.execContext.Set(immediateContext.GetMapping(), actionFqNamespace)
+		if err != nil {
+			return fmt.Errorf("unable to set fully qualified context data on store: %w", err)
+		}
+
+		err = ei.execContext.Set(immediateContext.GetMapping(), actionLocalNamespace)
+		if err != nil {
+			return fmt.Errorf("unable to set fully local context data on store: %w", err)
+		}
+	}
 
 	return nil
 }

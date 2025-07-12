@@ -8,6 +8,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/frozengoats/crucible/internal/executor"
+	"github.com/frozengoats/crucible/internal/log"
 	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
 )
@@ -18,6 +19,7 @@ var command struct {
 	Values   []string `short:"v" help:"list of paths to values files, stackable in order of occurrence (excluding values.yaml)"`
 	Sequence string   `arg:"" help:"the full or relative path to the sequence to execute"`
 	Targets  []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence"`
+	Debug    bool     `short:"d" help:"enable debug mode"`
 }
 
 func run() error {
@@ -47,6 +49,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	configObj.Debug = command.Debug
 
 	var valuesStore *kvstore.Store
 	valuesStack := []string{}
@@ -85,10 +89,7 @@ func run() error {
 			return fmt.Errorf("problem creating store from values file at %s\n%w", vp, err)
 		}
 
-		valuesStore, err = valuesStore.Overylay(s)
-		if err != nil {
-			return fmt.Errorf("unable to overlay %s on base\n%w", vp, err)
-		}
+		valuesStore = valuesStore.Overlay(s)
 	}
 
 	// set the values storage object and carry it around here
@@ -123,7 +124,7 @@ func main() {
 	_ = kong.Parse(&command)
 	err := run()
 	if err != nil {
-		fmt.Printf("%s\n", err)
+		log.Error(nil, "%s", err.Error())
 		os.Exit(1)
 	}
 }

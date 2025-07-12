@@ -1,6 +1,9 @@
 package eval
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 func EqualsOp(a any, b any) (any, error) {
 	switch aT := a.(type) {
@@ -18,6 +21,14 @@ func EqualsOp(a any, b any) (any, error) {
 		default:
 			return nil, fmt.Errorf("%v and %v are incompatible types for == comparison", a, b)
 		}
+	case bool:
+		switch bT := b.(type) {
+		case bool:
+			return aT == bT, nil
+		default:
+			return nil, fmt.Errorf("%v and %v are incompatible types for == comparison", a, b)
+		}
+
 	default:
 		return nil, fmt.Errorf("%v and %v are incompatible types for == comparison", a, b)
 	}
@@ -39,6 +50,14 @@ func UnequalsOp(a any, b any) (any, error) {
 		default:
 			return nil, fmt.Errorf("%v and %v are incompatible types for != comparison", a, b)
 		}
+	case bool:
+		switch bT := b.(type) {
+		case bool:
+			return aT != bT, nil
+		default:
+			return nil, fmt.Errorf("%v and %v are incompatible types for != comparison", a, b)
+		}
+
 	default:
 		return nil, fmt.Errorf("%v and %v are incompatible types for != comparison", a, b)
 	}
@@ -138,6 +157,10 @@ func AndOp(a any, b any) (any, error) {
 		aIsTrue = aT != 0
 	case bool:
 		aIsTrue = a == true
+	case []any:
+		aIsTrue = len(aT) > 0
+	case map[string]any:
+		aIsTrue = len(aT) > 0
 	default:
 		aIsTrue = false
 	}
@@ -149,6 +172,10 @@ func AndOp(a any, b any) (any, error) {
 		bIsTrue = bT != 0
 	case bool:
 		bIsTrue = b == true
+	case []any:
+		aIsTrue = len(bT) > 0
+	case map[string]any:
+		aIsTrue = len(bT) > 0
 	default:
 		bIsTrue = false
 	}
@@ -174,6 +201,10 @@ func OrOp(a any, b any) (any, error) {
 		aIsTrue = aT != 0
 	case bool:
 		aIsTrue = a == true
+	case []any:
+		aIsTrue = len(aT) > 0
+	case map[string]any:
+		aIsTrue = len(aT) > 0
 	default:
 		aIsTrue = false
 	}
@@ -185,6 +216,10 @@ func OrOp(a any, b any) (any, error) {
 		bIsTrue = bT != 0
 	case bool:
 		bIsTrue = b == true
+	case []any:
+		aIsTrue = len(bT) > 0
+	case map[string]any:
+		aIsTrue = len(bT) > 0
 	default:
 		bIsTrue = false
 	}
@@ -248,6 +283,20 @@ func MultiplyOp(a any, b any) (any, error) {
 		switch bT := b.(type) {
 		case float64:
 			return float64(aT * bT), nil
+		default:
+			return nil, fmt.Errorf("%v and %v are incompatible types for multiplication", a, b)
+		}
+	default:
+		return nil, fmt.Errorf("%v and %v are incompatible types for multiplication", a, b)
+	}
+}
+
+func ExponentOp(a any, b any) (any, error) {
+	switch aT := a.(type) {
+	case float64:
+		switch bT := b.(type) {
+		case float64:
+			return math.Pow(aT, bT), nil
 		default:
 			return nil, fmt.Errorf("%v and %v are incompatible types for multiplication", a, b)
 		}

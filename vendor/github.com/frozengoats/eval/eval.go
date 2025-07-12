@@ -2,11 +2,15 @@ package eval
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/frozengoats/kvstore"
 )
+
+type VariableLookup func(key string) (any, error)
+type FunctionCall func(name string, args ...any) (any, error)
+
+var variableFinder = regexp.MustCompile(`^\.[a-zA-Z_]`)
 
 const (
 	OperatorEquals        string = "=="
@@ -20,6 +24,7 @@ const (
 	OperatorPlus          string = "+"
 	OperatorMinus         string = "-"
 	OperatorMultiply      string = "*"
+	OperatorExponent      string = "**"
 	OperatorDivide        string = "/"
 	Separator             string = ","
 )
@@ -37,6 +42,7 @@ var operators = map[string]struct{}{
 	OperatorMinus:         {},
 	OperatorMultiply:      {},
 	OperatorDivide:        {},
+	OperatorExponent:      {},
 	Separator:             {},
 }
 
@@ -59,17 +65,17 @@ const (
 )
 
 var operatorChars = map[byte]struct{}{
-	Equals:      struct{}{},
-	Exclamation: struct{}{},
-	GreaterThan: struct{}{},
-	LessThan:    struct{}{},
-	Ampersand:   struct{}{},
-	Pipe:        struct{}{},
-	Plus:        struct{}{},
-	Minus:       struct{}{},
-	Multiply:    struct{}{},
-	Divide:      struct{}{},
-	Comma:       struct{}{},
+	Equals:      {},
+	Exclamation: {},
+	GreaterThan: {},
+	LessThan:    {},
+	Ampersand:   {},
+	Pipe:        {},
+	Plus:        {},
+	Minus:       {},
+	Multiply:    {},
+	Divide:      {},
+	Comma:       {},
 }
 
 type GroupType string
@@ -88,6 +94,26 @@ type Group struct {
 func CastToNumberIfApplicable(value any) any {
 	switch t := value.(type) {
 	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case int32:
+		return float64(t)
+	case float32:
+		return float64(t)
+	case int16:
+		return float64(t)
+	case int8:
+		return float64(t)
+	case uint:
+		return float64(t)
+	case uint64:
+		return float64(t)
+	case uint32:
+		return float64(t)
+	case uint16:
+		return float64(t)
+	case uint8:
 		return float64(t)
 	default:
 		return value
@@ -154,6 +180,8 @@ func (g *Group) EmitTokens() ([]*Token, error) {
 						continue
 					}
 
+					matchesVariable := variableFinder.MatchString(tok)
+
 					var tokenType TokenType
 					_, isOperator := operators[tok]
 					if isOperator {
@@ -165,13 +193,17 @@ func (g *Group) EmitTokens() ([]*Token, error) {
 					} else if isPrevOperator {
 						// this had operator characters but didn't match any known operator
 						return nil, fmt.Errorf("unrecognized operator %s", tok)
-					} else if strings.HasPrefix(tok, ".Values.") || strings.HasPrefix(tok, ".Context.") {
+					} else if matchesVariable {
 						tokenType = TokenTypeVariable
 					} else {
 						// is it a number
 						_, err := strconv.ParseFloat(tok, 64)
 						if err != nil {
-							tokenType = TokenTypeInferredString
+							if tok == "true" || tok == "false" {
+								tokenType = TokenTypeBoolean
+							} else {
+								tokenType = TokenTypeInferredString
+							}
 						} else {
 							tokenType = TokenTypeNumber
 						}
@@ -201,6 +233,7 @@ const (
 	TokenTypeVariable       TokenType = "VARIABLE"
 	TokenTypeFunction       TokenType = "FUNCTION"
 	TokenTypeSeparator      TokenType = "SEPARATOR"
+	TokenTypeBoolean        TokenType = "BOOLEAN"
 )
 
 type Token struct {
@@ -210,7 +243,7 @@ type Token struct {
 }
 
 // simplify traverses the token in a depth-first order and evaluates the result
-func (t *Token) evaluate(values *kvstore.Store, kvContext *kvstore.Store) (any, error) {
+func (t *Token) evaluate(varLookup VariableLookup, funcCall FunctionCall) (any, error) {
 	var curVal any
 	var prevToken = &Token{
 		Type: TokenTypeOperator,
@@ -221,7 +254,7 @@ func (t *Token) evaluate(values *kvstore.Store, kvContext *kvstore.Store) (any, 
 		var args []any
 		for _, token := range t.Tokens {
 			// these are function arguments in this case, they need to be simplified but
-			v, err := token.evaluate(values, kvContext)
+			v, err := token.evaluate(varLookup, funcCall)
 			if err != nil {
 				return nil, err
 			}
@@ -230,20 +263,29 @@ func (t *Token) evaluate(values *kvstore.Store, kvContext *kvstore.Store) (any, 
 		}
 
 		// execute the function call with the supplied arguments
-		return Call(t.Text, args)
+		v, err := funcCall(t.Text, args...)
+		if err != nil {
+			return nil, err
+		}
+		return CastToNumberIfApplicable(v), nil
 	case TokenTypeInferredString:
 		return t.Text, nil
+	case TokenTypeBoolean:
+		if t.Text == "true" {
+			return true, nil
+		}
+		return false, nil
 	case TokenTypeString:
 		return t.Text, nil
 	case TokenTypeNumber:
 		fl, _ := strconv.ParseFloat(t.Text, 64)
 		return fl, nil
 	case TokenTypeVariable:
-		if strings.HasPrefix(t.Text, ".Values.") {
-			return CastToNumberIfApplicable(values.Get(values.ParseNamespaceString(strings.TrimPrefix(t.Text, ".Values."))...)), nil
+		varValue, err := varLookup(t.Text)
+		if err != nil {
+			return nil, err
 		}
-
-		return CastToNumberIfApplicable(kvContext.Get(values.ParseNamespaceString(strings.TrimPrefix(t.Text, ".Context."))...)), nil
+		return CastToNumberIfApplicable(varValue), nil
 	}
 
 	for _, token := range t.Tokens {
@@ -257,7 +299,7 @@ func (t *Token) evaluate(values *kvstore.Store, kvContext *kvstore.Store) (any, 
 			continue
 		}
 
-		v, e := token.evaluate(values, kvContext)
+		v, e := token.evaluate(varLookup, funcCall)
 		if e != nil {
 			return nil, e
 		}
@@ -297,6 +339,8 @@ func (t *Token) evaluate(values *kvstore.Store, kvContext *kvstore.Store) (any, 
 			curVal, err = MinusOp(curVal, value)
 		case OperatorMultiply:
 			curVal, err = MultiplyOp(curVal, value)
+		case OperatorExponent:
+			curVal, err = ExponentOp(curVal, value)
 		case OperatorDivide:
 			curVal, err = DivideOp(curVal, value)
 		default:
@@ -310,23 +354,6 @@ func (t *Token) evaluate(values *kvstore.Store, kvContext *kvstore.Store) (any, 
 	}
 
 	return curVal, nil
-}
-
-// GetValue returns a value from either of the context stores using identifier
-func GetValue(valuesStore *kvstore.Store, contextStore *kvstore.Store, identifier string) (any, error) {
-	var store *kvstore.Store
-	if strings.HasPrefix(identifier, ".Values.") {
-		store = valuesStore
-		identifier = strings.TrimPrefix(identifier, ".Values.")
-	} else if strings.HasPrefix(identifier, ".Context.") {
-		store = contextStore
-		identifier = strings.TrimPrefix(identifier, ".Context.")
-	} else {
-		return nil, fmt.Errorf("unknown store source (must begin with .Values. or .Context.): %s", identifier)
-	}
-
-	// return the value, it may or may not exist, that is not our concern
-	return store.Get(store.ParseNamespaceString(identifier)...), nil
 }
 
 // getGroups returns a list of groups, whereby each group is either a quoted string, parenthesis group,
@@ -458,14 +485,8 @@ func tokenize(expression string) (*Token, error) {
 	var prevToken *Token
 	for _, t := range tokens {
 		if prevToken != nil && prevToken.Type == TokenTypeInferredString && t.Type == TokenTypeGroup {
-			// this is likely a function call, look up the call on the function board
-			_, isFunc := functions[prevToken.Text]
-			if !isFunc {
-				return nil, fmt.Errorf("unknown function %s", prevToken.Text)
-			}
-
 			// a function call will have one or more arguments, thus this token list needs to be converted into a series of groups, one per arg
-			var newTok *Token = &Token{
+			var newTok = &Token{
 				Type: TokenTypeGroup,
 			}
 			for _, subTok := range t.Tokens {
@@ -489,6 +510,33 @@ func tokenize(expression string) (*Token, error) {
 		prevToken = t
 	}
 
+	var orderedTokens []*Token
+	for _, oper := range []string{
+		OperatorExponent, OperatorDivide, OperatorMultiply,
+	} {
+		i := 0
+		for i < len(rectifiedTokens) {
+			j := i + 1
+			if j < len(rectifiedTokens)-1 {
+				if rectifiedTokens[j].Type == TokenTypeOperator && rectifiedTokens[j].Text == oper {
+					orderedTokens = append(orderedTokens, &Token{
+						Type:   TokenTypeGroup,
+						Tokens: rectifiedTokens[i : i+3],
+					})
+					i += 3
+					continue
+				}
+			}
+
+			orderedTokens = append(orderedTokens, rectifiedTokens[i])
+			i++
+		}
+
+		// swap them and start on the next loop
+		rectifiedTokens = orderedTokens
+		orderedTokens = nil
+	}
+
 	return &Token{
 		Type:   TokenTypeGroup,
 		Tokens: rectifiedTokens,
@@ -497,10 +545,72 @@ func tokenize(expression string) (*Token, error) {
 
 // Evaluate evaluates an expression to either true or false, or returns an error if the expression cannot
 // be evaluated.
-func Evaluate(expression string, values *kvstore.Store, kvContext *kvstore.Store) (any, error) {
+func Evaluate(expression string, varLookup VariableLookup, funcCall FunctionCall) (any, error) {
 	tokenGroup, err := tokenize(expression)
 	if err != nil {
 		return false, err
 	}
-	return tokenGroup.evaluate(values, kvContext)
+	return tokenGroup.evaluate(varLookup, funcCall)
+}
+
+func IsTruthy(value any) bool {
+	switch t := value.(type) {
+	case string:
+		return len(t) > 0
+	case float64:
+		return t != 0
+	case []any:
+		return len(t) > 0
+	case map[string]any:
+		return len(t) > 0
+	case bool:
+		return t
+	default:
+		return false
+	}
+}
+
+func AsNumber(value any) float64 {
+	switch t := value.(type) {
+	case float64:
+		return t
+	default:
+		return 0.
+	}
+}
+
+func AsString(value any) string {
+	switch t := value.(type) {
+	case string:
+		return t
+	default:
+		return ""
+	}
+}
+
+func AsBoolean(value any) bool {
+	switch t := value.(type) {
+	case bool:
+		return t
+	default:
+		return false
+	}
+}
+
+func AsArray(value any) []any {
+	switch t := value.(type) {
+	case []any:
+		return t
+	default:
+		return nil
+	}
+}
+
+func AsMapping(value any) map[string]any {
+	switch t := value.(type) {
+	case map[string]any:
+		return t
+	default:
+		return nil
+	}
 }

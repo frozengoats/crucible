@@ -7,8 +7,10 @@ import (
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/frozengoats/crucible/internal/config"
+	"github.com/frozengoats/crucible/internal/log"
 	"github.com/frozengoats/crucible/internal/sequence"
 	"github.com/frozengoats/crucible/internal/ssh"
+	"github.com/frozengoats/kvstore"
 )
 
 type Executor struct {
@@ -106,7 +108,6 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 	// start up the executing threads and standby until executions are queued below
 	execWaitGroup := &sync.WaitGroup{}
 	execChan := make(chan *Executor, maxConcurrentHosts)
-	errChan := make(chan error, len(hostIdents))
 	for range maxConcurrentHosts {
 		go func() {
 			// channel is closed when all executions have completed or an error is encountered, loop will
@@ -124,9 +125,13 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 						}
 
 						// execute the action here
-						err := e.ExecutionInstance.Execute(action)
+						err := e.ExecutionInstance.Execute(action, kvstore.NewStore())
+						if syncExecutionSteps || err != nil {
+							if err != nil {
+								e.ExecutionInstance.SetError(err)
+								log.Error([]any{"host", e.HostIdent}, "execution terminated due to error: %s", err.Error())
+							}
 
-						if syncExecutionSteps {
 							// break after this execution if
 							break
 						}

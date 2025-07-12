@@ -37,6 +37,7 @@ type UserConfig struct {
 
 type Config struct {
 	// keys are unique host identifiers, though they themselves have no meaning
+	Debug       bool
 	Executor    Executor               `yaml:"executor"`
 	Hosts       map[string]*HostConfig `yaml:"hosts"`
 	ValuesStore *kvstore.Store

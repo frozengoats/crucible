@@ -1,6 +1,6 @@
-GO_IMAGE := golang:1.24-alpine
-GO_RUN := docker run --rm -e APP_TEST_NAME=hello -e CGO_ENABLED=0 -e HOME=$$HOME -v $$HOME:$$HOME -u $(shell id -u):$(shell id -g) -v $(shell pwd):/build -w /build $(GO_IMAGE) go
-GO_RUN_TEST := docker run  --network host --rm -e APP_TEST_NAME=hello -e CGO_ENABLED=0 -e HOME=$$HOME -v /tmp:/tmp -v /var/run/docker.sock:/var/run/docker.sock -v $$HOME:$$HOME -v $(shell pwd):/build -w /build $(GO_IMAGE) go test
+GO_IMAGE := frozengoats/golang:1
+GO_RUN := docker run --rm -e CGO_ENABLED=0 -e HOME=$$HOME -v $$HOME:$$HOME -u $(shell id -u):$(shell id -g) -v $(shell pwd):/build -w /build $(GO_IMAGE) go
+GO_RUN_TEST := docker run  --network host --rm -e CGO_ENABLED=0 -e HOME=$$HOME -v /tmp:/tmp -v /var/run/docker.sock:/var/run/docker.sock -v $$HOME:$$HOME -v $(shell pwd):/build -w /build $(GO_IMAGE) go test
 GO_FILES := $(shell find . -type f -path **/*.go -not -path "./vendor/*")
 PACKAGES := $(shell go list ./...)
 
