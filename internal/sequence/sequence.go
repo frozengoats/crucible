@@ -55,6 +55,7 @@ type Action struct {
 	Su            string    `yaml:"su"`            // switch to the following user (can be a name or base 10 string of a numeric id)
 	Sudo          bool      `yaml:"sudo"`          // run the command as root
 	SubSequence   *Sequence `yaml:"subSequence"`   // sub sequence if imported
+	Local         bool      `yaml:"local"`         // when true, action will be executed locally instead of remotely, this is useful for preparing local assets which might need to be present locally but not remotely
 
 	// these properties are independent action properties, mutually exclusive
 	Exec  []string `yaml:"exec"`  // execute a command
@@ -155,6 +156,7 @@ type ExecutionInstance struct {
 	hostIdent            string
 	hostConfig           *config.HostConfig
 	executionClient      cmdsession.ExecutionClient
+	localExecutionClient cmdsession.ExecutionClient
 	sequence             *Sequence
 	totalExecutionSteps  int
 	executionStack       []SeqPos
@@ -169,14 +171,15 @@ type ExecutionInstance struct {
 
 func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) *ExecutionInstance {
 	return &ExecutionInstance{
-		config:              config,
-		hostIdent:           hostIdent,
-		hostConfig:          config.Hosts[hostIdent],
-		executionClient:     executionClient,
-		sequence:            s,
-		totalExecutionSteps: s.CountExecutionSteps(),
-		varContext:          kvstore.NewStore(),
-		execContext:         kvstore.NewStore(),
+		config:               config,
+		hostIdent:            hostIdent,
+		hostConfig:           config.Hosts[hostIdent],
+		executionClient:      executionClient,
+		localExecutionClient: cmdsession.NewLocalExecutionClient(),
+		sequence:             s,
+		totalExecutionSteps:  s.CountExecutionSteps(),
+		varContext:           kvstore.NewStore(),
+		execContext:          kvstore.NewStore(),
 	}
 }
 
@@ -404,7 +407,13 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, error) {
 	execStr, ok := action.GetExecutionString()
 	if ok {
-		return ei.executeRemoteCommand(execStr)
+		var execClient cmdsession.ExecutionClient
+		if action.Local {
+			execClient = ei.localExecutionClient
+		} else {
+			execClient = ei.executionClient
+		}
+		return executeRemoteCommand(execClient, execStr)
 	}
 
 	// if the code gets to this point, it's a sync
@@ -415,9 +424,9 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 	return nil, 0, fmt.Errorf("unknown action execution")
 }
 
-func (ei *ExecutionInstance) executeRemoteCommand(commandStr string) ([]byte, int, error) {
+func executeRemoteCommand(execClient cmdsession.ExecutionClient, commandStr string) ([]byte, int, error) {
 	// create a new command session
-	sess, err := ei.executionClient.NewCmdSession()
+	sess, err := execClient.NewCmdSession()
 	if err != nil {
 		return nil, 0, err
 	}

@@ -13,6 +13,8 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+var Version string = "dev"
+
 var command struct {
 	Cwd      string   `short:"c" help:"change the current working directory to this location"`
 	Configs  []string `short:"s" help:"list of paths to any config yaml overrides, stackable in order of occurrence (excluding config.yaml)"`
@@ -20,6 +22,7 @@ var command struct {
 	Sequence string   `arg:"" help:"the full or relative path to the sequence to execute"`
 	Targets  []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence"`
 	Debug    bool     `short:"d" help:"enable debug mode"`
+	Version  bool     `help:"display the current version"`
 }
 
 func run() error {
@@ -121,6 +124,13 @@ func run() error {
 }
 
 func main() {
+	for _, arg := range os.Args {
+		if arg == "--version" {
+			fmt.Printf("%s\n", Version)
+			os.Exit(0)
+		}
+	}
+
 	_ = kong.Parse(&command)
 	err := run()
 	if err != nil {

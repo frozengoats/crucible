@@ -91,24 +91,28 @@ func GetPrivateKeySigner(keyFile string, passphraseProvider PassphraseProvider) 
 }
 
 type SshSession struct {
-	options  *SshOptions
-	client   *ssh.Client
-	host     string
-	username string
-	keyFile  string
+	options        *SshOptions
+	client         *ssh.Client
+	hostname       string
+	port           int
+	username       string
+	keyFile        string
+	knownHostsFile string
 }
 
-func NewSsh(host string, username string, keyFile string, configOptions ...SshConfigOption) *SshSession {
+func NewSsh(hostname string, port int, username string, keyFile string, knownHostsFile string, configOptions ...SshConfigOption) *SshSession {
 	options := &SshOptions{}
 	for _, o := range configOptions {
 		o(options)
 	}
 
 	return &SshSession{
-		host:     host,
-		username: username,
-		keyFile:  keyFile,
-		options:  options,
+		hostname:       hostname,
+		port:           port,
+		username:       username,
+		keyFile:        keyFile,
+		knownHostsFile: knownHostsFile,
+		options:        options,
 	}
 }
 
@@ -118,6 +122,39 @@ func (s *SshSession) Close() error {
 	}
 
 	return nil
+}
+
+func (s *SshSession) hostKeyCallback(hostname string, remote net.Addr, key ssh.PublicKey) error {
+	kh, err := GetKnownHostsInstance(s.knownHostsFile)
+	if err != nil {
+		return err
+	}
+
+	kh.Lock()
+	defer kh.Unlock()
+
+	err = kh.Kh.HostKeyCallback()(hostname, remote, key)
+	if knownhosts.IsHostKeyChanged(err) {
+		if s.options.ignoreHostKeyChange {
+			return nil
+		}
+		return fmt.Errorf("host key has changed for %s", hostname)
+	}
+
+	if knownhosts.IsHostUnknown(err) {
+		if s.options.allowUnknownHosts {
+			ferr := kh.WriteKnownHost(hostname, remote, key)
+			if ferr != nil {
+				return ferr
+			}
+
+			return nil
+		}
+
+		return fmt.Errorf("host %s is not known in your known_hosts file, to remedy, ssh into the host manually", s.hostname)
+	}
+
+	return err
 }
 
 func (s *SshSession) Connect() error {
@@ -165,44 +202,17 @@ func (s *SshSession) Connect() error {
 		Auth: []ssh.AuthMethod{
 			authMethod,
 		},
-		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-			kh, err := GetKnownHostsInstance()
-			if err != nil {
-				return err
-			}
-
-			kh.Lock()
-			defer kh.Unlock()
-
-			err = kh.Kh.HostKeyCallback()(hostname, remote, key)
-			if knownhosts.IsHostKeyChanged(err) {
-				if s.options.ignoreHostKeyChange {
-					return nil
-				}
-				return fmt.Errorf("host key has changed for %s", hostname)
-			}
-
-			if knownhosts.IsHostUnknown(err) {
-				if s.options.allowUnknownHosts {
-					ferr := kh.WriteKnownHost(hostname, remote, key)
-					if ferr != nil {
-						return ferr
-					}
-
-					return nil
-				}
-
-				return fmt.Errorf("host %s is not known in your known_hosts file, to remedy, ssh into the host manually", s.host)
-			}
-
-			return err
-		},
-		Timeout: 10 * time.Second,
+		HostKeyCallback: s.hostKeyCallback,
+		Timeout:         10 * time.Second,
 	}
 
-	client, err := ssh.Dial("tcp", s.host, sshConfig)
+	host := s.hostname
+	if s.port != 22 {
+		host = fmt.Sprintf("%s:%d", host, s.port)
+	}
+	client, err := ssh.Dial("tcp", s.hostname, sshConfig)
 	if err != nil {
-		return fmt.Errorf("unable to establish ssh connection for %s\n%w", s.host, err)
+		return fmt.Errorf("unable to establish ssh connection for %s\n%w", host, err)
 	}
 
 	s.client = client

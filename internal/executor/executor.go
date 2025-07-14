@@ -21,8 +21,8 @@ type Executor struct {
 
 	executionClient   cmdsession.ExecutionClient
 	sequence          *sequence.Sequence
-	sequenceIndex     int
 	ExecutionInstance *sequence.ExecutionInstance
+	sequenceIndex     int
 }
 
 var passphraseLock sync.Mutex
@@ -32,15 +32,6 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 	hostConfig, ok := cfg.Hosts[hostIdent]
 	if !ok {
 		return nil, fmt.Errorf("no host identity \"%s\" exists", hostIdent)
-	}
-
-	sshKeyPath := cfg.Executor.Ssh.KeyPath
-	if hostConfig.SshKeyPath != "" {
-		sshKeyPath = hostConfig.SshKeyPath
-	}
-
-	if sshKeyPath == "" {
-		return nil, fmt.Errorf("no ssh key was specified both at top level or for host identity \"%s\"", hostIdent)
 	}
 
 	addrs, err := net.LookupIP(hostConfig.Host)
@@ -61,9 +52,14 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 	if isLoopback {
 		executionClient = cmdsession.NewLocalExecutionClient()
 	} else {
-		executionClient = ssh.NewSsh(hostConfig.Host, cfg.User.Username, sshKeyPath,
-			ssh.WithIgnoreHostKeyChangeOption(cfg.Executor.Ssh.IgnoreHostKeyChange),
-			ssh.WithAllowUnknownHostsOption(cfg.Executor.Ssh.AllowUnknownHosts),
+		executionClient = ssh.NewSsh(
+			cfg.Hostname(hostIdent),
+			cfg.Port(hostIdent),
+			cfg.KnownHostsFile(hostIdent),
+			cfg.Username(hostIdent),
+			cfg.KeyPath(hostIdent),
+			ssh.WithIgnoreHostKeyChangeOption(cfg.IgnoreHostKeyChange(hostIdent)),
+			ssh.WithAllowUnknownHostsOption(cfg.AllowUnknownHost(hostIdent)),
 			ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),
 		)
 	}

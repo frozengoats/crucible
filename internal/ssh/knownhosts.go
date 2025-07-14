@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/skeema/knownhosts"
@@ -12,7 +11,7 @@ import (
 )
 
 var (
-	knownhostsInstance *SshKnownHosts
+	knownhostsInstance = map[string]*SshKnownHosts{}
 	knownhostsLock     sync.Mutex
 )
 
@@ -73,44 +72,37 @@ func (kh *SshKnownHosts) WriteKnownHost(hostname string, remote net.Addr, key ss
 	return nil
 }
 
-func InitializeKnownHosts(options ...KnownHostOption) error {
+func NewKnownHosts(options ...KnownHostOption) (*SshKnownHosts, error) {
 	knownHostOptions := &KnownHostOptions{}
 	for _, opt := range options {
 		opt(knownHostOptions)
 	}
 
+	kh, err := knownhosts.NewDB(knownHostOptions.knownHostsFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to load known_hosts file from %s\n%w", knownHostOptions.knownHostsFile, err)
+	}
+
+	return &SshKnownHosts{
+		Kh:       kh,
+		filename: knownHostOptions.knownHostsFile,
+	}, nil
+}
+
+func GetKnownHostsInstance(location string) (*SshKnownHosts, error) {
 	knownhostsLock.Lock()
 	defer knownhostsLock.Unlock()
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("unable to establish user's home directory\n%w", err)
-	}
-
-	if knownHostOptions.knownHostsFile == "" {
-		knownHostOptions.knownHostsFile = filepath.Join(homeDir, ".ssh", "known_hosts")
-	}
-
-	kh, err := knownhosts.NewDB(knownHostOptions.knownHostsFile)
-	if err != nil {
-		return fmt.Errorf("unable to load known_hosts file from %s\n%w", knownHostOptions.knownHostsFile, err)
-	}
-
-	knownhostsInstance = &SshKnownHosts{
-		Kh:       kh,
-		filename: knownHostOptions.knownHostsFile,
-	}
-
-	return nil
-}
-
-func GetKnownHostsInstance() (*SshKnownHosts, error) {
-	if knownhostsInstance == nil {
-		err := InitializeKnownHosts()
+	var err error
+	ki, ok := knownhostsInstance[location]
+	if !ok {
+		ki, err = NewKnownHosts(WithKnownHostsFile(location))
 		if err != nil {
 			return nil, err
 		}
+
+		knownhostsInstance[location] = ki
 	}
 
-	return knownhostsInstance, nil
+	return ki, nil
 }
