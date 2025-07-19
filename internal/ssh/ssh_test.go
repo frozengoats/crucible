@@ -80,14 +80,17 @@ type SshTestSuite struct {
 	sshContainer      testcontainers.Container
 	sshAgentContainer testcontainers.Container
 	sshHost           string
+	testDataDir       string
 }
 
 func (suite *SshTestSuite) SetupTest() {
-	configScript, err := filepath.Abs(filepath.Join(".", "testdata", "config.sh"))
+	testDataDir, err := filepath.Abs(filepath.Join("..", "..", "testdata"))
+	suite.testDataDir = testDataDir
 	suite.NoError(err)
-	pubKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519.pub"))
-	suite.NoError(err)
-	pubKeyPhrase, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519_passphrase.pub"))
+
+	configScript := filepath.Join(testDataDir, "config.sh")
+	pubKey := filepath.Join(testDataDir, "id_ed25519.pub")
+	pubKeyPhrase := filepath.Join(testDataDir, "id_ed25519_passphrase.pub")
 	suite.NoError(err)
 
 	req := testcontainers.ContainerRequest{
@@ -175,37 +178,33 @@ func (suite *SshTestSuite) TearDownTest() {
 }
 
 func (suite *SshTestSuite) TestUnknownHostDontAllow() {
-	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519"))
-	suite.NoError(err)
-
+	privKey := filepath.Join(suite.testDataDir, "id_ed25519")
 	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
 
 	// should fail b/c host is unknown and we don't allow for that
-	err = sshSession.Connect()
+	err := sshSession.Connect()
 	suite.Error(err)
 }
 
 func (suite *SshTestSuite) TestUnknownHostAllow() {
-	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519"))
-	suite.NoError(err)
+	privKey := filepath.Join(suite.testDataDir, "id_ed25519")
 
 	// allow the unknown host to be connected to
 	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
 
-	err = sshSession.Connect()
+	err := sshSession.Connect()
 	suite.NoError(err)
 }
 
 func (suite *SshTestSuite) TestKnownHostNoProblem() {
-	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519"))
-	suite.NoError(err)
+	privKey := filepath.Join(suite.testDataDir, "id_ed25519")
 
 	// allow the unknown host to be connected to, so that we can cache it in our known_hosts
 	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
-	err = sshSession.Connect()
+	err := sshSession.Connect()
 	suite.NoError(err)
 
 	// this time, fail if a host is unknown.  it should already be part of our known_hosts though, so it should pass
@@ -216,13 +215,12 @@ func (suite *SshTestSuite) TestKnownHostNoProblem() {
 }
 
 func (suite *SshTestSuite) TestKeyWithPassphrase() {
-	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519_passphrase"))
-	suite.NoError(err)
+	privKey := filepath.Join(suite.testDataDir, "id_ed25519_passphrase")
 
 	// block entry with bad passphrase on locked private key
 	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("badphrase")))
 	defer sshSession.Close()
-	err = sshSession.Connect()
+	err := sshSession.Connect()
 	suite.Error(err)
 
 	// admit entry once by providing the passphrase when prompted with the correct passphrase
@@ -240,14 +238,13 @@ func (suite *SshTestSuite) TestKeyWithPassphrase() {
 
 func (suite *SshTestSuite) TestRsyncNoPassphrase() {
 	// prepare ssh session
-	privKey, err := filepath.Abs(filepath.Join(".", "testdata", "id_ed25519"))
-	suite.NoError(err)
+	privKey := filepath.Join(suite.testDataDir, "id_ed25519")
 
 	// allow the unknown host to be connected to
 	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
 
-	err = sshSession.Connect()
+	err := sshSession.Connect()
 	suite.NoError(err)
 	err = sshSession.Close()
 	suite.NoError(err)
