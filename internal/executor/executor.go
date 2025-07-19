@@ -1,6 +1,7 @@
 package executor
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
@@ -12,6 +13,13 @@ import (
 	"github.com/frozengoats/crucible/internal/ssh"
 	"github.com/frozengoats/kvstore"
 )
+
+type ResultObj struct {
+	SuccessCount          int      `json:"successCount"`
+	FailCount             int      `json:"failCount"`
+	SuccessHostIdentities []string `json:"successHostIdentities"`
+	FailHostIdentities    []string `json:"failHostIdentities"`
+}
 
 type Executor struct {
 	Config       *config.Config
@@ -34,17 +42,15 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		return nil, fmt.Errorf("no host identity \"%s\" exists", hostIdent)
 	}
 
-	addrs, err := net.LookupIP(hostConfig.Host)
-	if err != nil {
-		return nil, fmt.Errorf("problem resolving hostname: %s\n%w", hostConfig.Host, err)
-	}
-
-	// this logic is a little weak - though is there a chance of having multiple ips that are both loopback and non-loopback?
 	isLoopback := false
-	for _, addr := range addrs {
-		if addr.IsLoopback() {
-			isLoopback = true
-			break
+	addrs, err := net.LookupIP(hostConfig.Host)
+	if err == nil {
+		// this logic is a little weak - though is there a chance of having multiple ips that are both loopback and non-loopback?
+		for _, addr := range addrs {
+			if addr.IsLoopback() {
+				isLoopback = true
+				break
+			}
 		}
 	}
 
@@ -140,6 +146,7 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 	// start queueing executions
 	hasMore := true
 	for hasMore {
+		hasMore = false
 		for _, e := range executors {
 			if e.ExecutionInstance.HasMore() {
 				execWaitGroup.Add(1)
@@ -151,8 +158,40 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 		// will not start for any execution instance until the previous wave is completed.  in the case of
 		// non sync mode, a single loop will indicate completion of all hosts.
 		execWaitGroup.Wait()
+
+		if syncExecutionSteps {
+			for _, e := range executors {
+				if e.ExecutionInstance.GetError() != nil {
+					hasMore = false
+					break
+				}
+			}
+		}
 	}
 	close(execChan)
+
+	resultObj := &ResultObj{
+		SuccessHostIdentities: []string{},
+		FailHostIdentities:    []string{},
+	}
+
+	for _, e := range executors {
+		if e.ExecutionInstance.GetError() != nil {
+			resultObj.FailCount++
+			resultObj.FailHostIdentities = append(resultObj.FailHostIdentities, e.HostIdent)
+		} else {
+			resultObj.SuccessCount++
+			resultObj.SuccessHostIdentities = append(resultObj.SuccessHostIdentities, e.HostIdent)
+		}
+	}
+
+	if configObj.Json {
+		resultObjBytes, err := json.Marshal(resultObj)
+		if err != nil {
+			return fmt.Errorf("unable to marshal result object to JSON: %w", err)
+		}
+		fmt.Println(string(resultObjBytes))
+	}
 
 	return nil
 }

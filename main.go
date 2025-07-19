@@ -23,6 +23,7 @@ var command struct {
 	Targets  []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence"`
 	Debug    bool     `short:"d" help:"enable debug mode"`
 	Version  bool     `help:"display the current version"`
+	Json     bool     `short:"j" help:"output results in json format, suppress normal logging"`
 }
 
 func run() error {
@@ -40,56 +41,86 @@ func run() error {
 		}
 	}
 
-	configPath := filepath.Join(cwd, "config.yaml")
-
-	_, err = os.Stat(configPath)
+	mainConfigPath := filepath.Join(cwd, "config.yaml")
+	_, err = os.Stat(mainConfigPath)
 	if err != nil {
-		return fmt.Errorf("no config.yaml could be located at %s, are you sure this is a crucible configuration?\n%w", configPath, err)
+		return fmt.Errorf("no config.yaml could be located at %s, are you sure this is a crucible configuration?\n%w", mainConfigPath, err)
 	}
 
-	configPaths := append([]string{configPath}, command.Configs...)
-	configObj, err := config.FromFilePaths(cwd, configPaths...)
+	for i, configPath := range command.Configs {
+		if !filepath.IsAbs(configPath) {
+			absPath, err := filepath.Abs(filepath.Join(cwd, configPath))
+			if err != nil {
+				return fmt.Errorf("problem interpreting path %s\n%w", configPath, err)
+			}
+			command.Configs[i] = absPath
+		}
+	}
+	configPaths := append([]string{mainConfigPath}, command.Configs...)
+
+	mainValuesPath := filepath.Join(cwd, "values.yaml")
+	for i, valuesPath := range command.Values {
+		if !filepath.IsAbs(valuesPath) {
+			absPath, err := filepath.Abs(filepath.Join(cwd, valuesPath))
+			if err != nil {
+				return fmt.Errorf("problem interpreting path %s\n%w", valuesPath, err)
+			}
+			command.Values[i] = absPath
+		}
+	}
+
+	var valuesPaths []string
+	_, err = os.Stat(mainConfigPath)
+	if err == nil {
+		valuesPaths = append([]string{mainValuesPath}, command.Values...)
+	} else {
+		valuesPaths = command.Values
+	}
+
+	if !filepath.IsAbs(command.Sequence) {
+		absPath, err := filepath.Abs(command.Sequence)
+		if err != nil {
+			return fmt.Errorf("problem interpreting path %s\n%w", command.Sequence, err)
+		}
+		command.Sequence = absPath
+	}
+	return executeSequence(configPaths, valuesPaths, command.Sequence, command.Targets, command.Debug)
+}
+
+func executeSequence(configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool) error {
+	configObj, err := config.FromFilePaths(configPaths...)
 	if err != nil {
 		return err
 	}
 
 	configObj.Debug = command.Debug
-
-	var valuesStore *kvstore.Store
-	valuesStack := []string{}
-	valuesPath := filepath.Join(cwd, "values.yaml")
-	_, err = os.Stat(valuesPath)
-	if err != nil {
-		valuesStore = kvstore.NewStore()
-		valuesStack = command.Values
+	if configObj.Debug {
+		log.SetLevel(log.DEBUG)
 	} else {
-		valuesStack = append(valuesStack, valuesPath)
-		valuesStack = append(valuesStack, command.Values...)
+		log.SetLevel(log.INFO)
 	}
 
-	for _, vp := range valuesStack {
-		if !filepath.IsAbs(vp) {
-			nvp, err := filepath.Abs(filepath.Join(cwd, vp))
-			if err != nil {
-				return fmt.Errorf("unable to reconcile values file %s", vp)
-			}
-			vp = nvp
-		}
+	if command.Json {
+		log.SetLevel(log.SILENT)
+		configObj.Json = true
+	}
 
-		valuesBytes, err := os.ReadFile(vp)
+	valuesStore := kvstore.NewStore()
+	for _, valuesPath := range valuesPaths {
+		valuesBytes, err := os.ReadFile(valuesPath)
 		if err != nil {
-			return fmt.Errorf("unable to read values file at %s", vp)
+			return fmt.Errorf("unable to read values file at %s", valuesPath)
 		}
 
 		vTarget := map[string]any{}
 		err = yaml.Unmarshal(valuesBytes, &vTarget)
 		if err != nil {
-			return fmt.Errorf("unable to parse yaml from values file at %s", vp)
+			return fmt.Errorf("unable to parse yaml from values file at %s", valuesPath)
 		}
 
 		s, err := kvstore.FromMapping(vTarget)
 		if err != nil {
-			return fmt.Errorf("problem creating store from values file at %s\n%w", vp, err)
+			return fmt.Errorf("problem creating store from values file at %s\n%w", valuesPath, err)
 		}
 
 		valuesStore = valuesStore.Overlay(s)
@@ -99,8 +130,10 @@ func run() error {
 	configObj.ValuesStore = valuesStore
 
 	selectedHosts := map[string]struct{}{}
-	for _, hostIdent := range command.Targets {
-		selectedHosts[hostIdent] = struct{}{}
+	if len(command.Targets) >= 1 && command.Targets[0] != "all" {
+		for _, hostIdent := range command.Targets {
+			selectedHosts[hostIdent] = struct{}{}
+		}
 	}
 
 	hostIdents := []string{}

@@ -1,6 +1,8 @@
 package ssh
 
 import (
+	"strings"
+
 	"github.com/frozengoats/crucible/internal/cmdsession"
 	"golang.org/x/crypto/ssh"
 )
@@ -10,13 +12,13 @@ type SshCmdSession struct {
 }
 
 // Execute executes a
-func (s *SshCmdSession) Execute(cmd string) ([]byte, error) {
+func (s *SshCmdSession) Execute(cmd ...string) ([]byte, error) {
 	sess, err := s.client.NewSession()
 	if err != nil {
 		return nil, cmdsession.NewSessionError("unable to initiate new session: %", err.Error())
 	}
 
-	output, err := sess.Output(cmd)
+	output, err := sess.Output(strings.Join(cmd, " "))
 	if err != nil {
 		exitErr, ok := err.(*ssh.ExitError)
 		if ok {

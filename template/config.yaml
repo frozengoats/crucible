@@ -1,0 +1,62 @@
+# OPTIONAL this defines the behavior/characteristics of the executor which is responsible for executing action sequences at runtime
+executor:
+
+  # OPTIONAL maximum number of hosts which the executor will attempt to execute upon concurrently
+  maxConcurrentHosts: 10
+
+  # OPTIONAL ssh related configuration
+  ssh:
+
+    # OPTIONAL allow hosts with no entry in the known_hosts file to proceed with configuration (otherwise process is interrupted for said host)
+    allowUnknownHost: false
+
+    # OPTIONAL allow hosts with a changed host key in the known_hosts file to proceed with configuration (otherwise process is interrupted for said host)
+    ignoreHostKeyChange: false
+
+    # OPTIONAL private key which is used for all hosts, overriding any configuration which would otherwise be gleaned from ~/.ssh/config, etc.
+    keyPath: /var/other/location/id_rsa
+
+    # OPTIONAL location of a known_hosts file which overrides the inferrable location for all hosts
+    knownHostsPath: /var/other/location/known_hosts
+
+    # OPTIONAL username to use for the ssh connection, for all hosts, otherwise the current executing user will be inferred
+    user: other
+
+  # if set to true, all targetted hosts needs to complete any given execution step before any can proceed to the next
+  # if any host errors on a given step, it will stop all hosts from proceeding to the next
+  syncExecutionSteps: false
+
+# individual host configurations go in here
+hosts:
+
+  # apple is the unique identifier for this particular host but has nothing to do with the host, the identifier is used to easily
+  # create overrides which can supercede one or more host config attributes
+  apple:
+
+    # this is the host and can be a fqdn, locally referenced hostname, or ip address. it can also contain
+    # a port number if representing a non-aliased host with a non-standard ssh port number
+    host: apple.myhosts.com
+
+    # OPTIONAL value which allows hosts to be referenced as groups when targeted for action sequence execution.
+    # if the value is unspecified, the host simply can't be targeted as part of a group, but can still be targeted as part
+    # of the entire collection, or individually
+    group: production
+
+    # OPTIONAL host level ssh overrides
+    ssh:
+
+      # OPTIONAL allow this particular host to proceed even if it is not known in the known_hosts file
+      allowUnknownHost: false
+
+      # OPTIONAL allow this particular host to proceed even if it has a modified host key
+      ignoreHostKeyChange: false
+
+      # OPTIONAL value which allows this specific host to provide the exact location of its private key file
+      keyPath: /var/other/location/key
+
+      # OPTIONAL location of a known_hosts file which overrides the inferrable location for this specific host
+      knownHostsPath: /var/other/location/known_hosts
+
+      # OPTIONAL value which allows this specific host to use a specific ssh user instead of the current executing user.  do not provide
+      # this pair if the executing user is the ssh user for this host.
+      user: other

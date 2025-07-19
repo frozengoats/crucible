@@ -15,7 +15,7 @@ type ExecutionClient interface {
 type DummyCmdSession struct {
 }
 
-func (cs *DummyCmdSession) Execute(cmd string) ([]byte, error) {
+func (cs *DummyCmdSession) Execute(cmd ...string) ([]byte, error) {
 	return nil, nil
 }
 
@@ -69,7 +69,7 @@ func (se *SessionError) Error() string {
 }
 
 type CmdSession interface {
-	Execute(cmd string) ([]byte, error)
+	Execute(cmd ...string) ([]byte, error)
 }
 
 func IsSessionError(err error) bool {
@@ -102,14 +102,14 @@ func (c *LocalExecutionClient) Close() error {
 }
 
 func (c *LocalExecutionClient) NewCmdSession() (CmdSession, error) {
-	return &DummyCmdSession{}, nil
+	return &LocalCmdSession{}, nil
 }
 
 type LocalCmdSession struct {
 }
 
-func (c *LocalCmdSession) Execute(cmd string) ([]byte, error) {
-	com := exec.Command(cmd)
+func (c *LocalCmdSession) Execute(cmd ...string) ([]byte, error) {
+	com := exec.Command(cmd[0], cmd[1:]...)
 	outBytes, err := com.Output()
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {

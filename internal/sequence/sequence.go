@@ -63,22 +63,22 @@ type Action struct {
 	Sync  *Sync    `yaml:"sync"`  // sync files from local to remote
 }
 
-func (a *Action) GetExecutionString() (string, bool) {
-	if len(a.Exec) == 0 || len(a.Shell) == 0 {
-		return "", false
+func (a *Action) GetExecutionString() ([]string, bool) {
+	if len(a.Exec) == 0 && len(a.Shell) == 0 {
+		return nil, false
 	}
 
 	if len(a.Exec) > 0 {
-		return strings.Join(a.Exec, " "), true
+		return a.Exec, true
 	}
 
-	return fmt.Sprintf("sh -c '%s'", a.Shell), true
+	return []string{"sh", "-c", a.Shell}, true
 }
 
 type Sequence struct {
 	Name        string    `yaml:"name"`
 	Description string    `yaml:"description"`
-	Sequence    []*Action `yaml:"actions"`
+	Sequence    []*Action `yaml:"sequence"`
 	filename    string
 }
 
@@ -87,11 +87,11 @@ func (s *Sequence) Validate() error {
 		return fmt.Errorf("sequence at %s must have the name field set", s.filename)
 	}
 
-	for index, action := range s.Sequence {
-		if action.Name == "" {
-			return fmt.Errorf("action at index %d in sequence file %s must have the name field set", index, s.filename)
-		}
-	}
+	// for index, action := range s.Sequence {
+	// 	if action.Name == "" {
+	// 		return fmt.Errorf("action at index %d in sequence file %s must have the name field set", index, s.filename)
+	// 	}
+	// }
 
 	return nil
 }
@@ -205,6 +205,13 @@ func (ei *ExecutionInstance) HasMore() bool {
 	}
 
 	return ei.currentExecutionStep < ei.totalExecutionSteps
+}
+
+func (ei *ExecutionInstance) GetError() error {
+	ei.lock.Lock()
+	defer ei.lock.Unlock()
+
+	return ei.err
 }
 
 // Next returns the next unexecuted action in the sequence, or nil if none remain
@@ -334,6 +341,8 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 			return err
 		}
 
+		log.Debug(context, "exit code: %d", exitCode)
+		log.Debug(context, "stdout\n%s", string(stdout))
 		immediateContext.Set(stdout, "stdout")
 		immediateContext.Set(exitCode, "exitCode")
 
@@ -407,6 +416,9 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, error) {
 	execStr, ok := action.GetExecutionString()
 	if ok {
+		if action.Sudo {
+			execStr = append([]string{"sudo"}, execStr...)
+		}
 		var execClient cmdsession.ExecutionClient
 		if action.Local {
 			execClient = ei.localExecutionClient
@@ -424,14 +436,14 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 	return nil, 0, fmt.Errorf("unknown action execution")
 }
 
-func executeRemoteCommand(execClient cmdsession.ExecutionClient, commandStr string) ([]byte, int, error) {
+func executeRemoteCommand(execClient cmdsession.ExecutionClient, cmd []string) ([]byte, int, error) {
 	// create a new command session
 	sess, err := execClient.NewCmdSession()
 	if err != nil {
 		return nil, 0, err
 	}
 
-	output, err := sess.Execute(commandStr)
+	output, err := sess.Execute(cmd...)
 	if err != nil {
 		exitCode, hasExitCode := cmdsession.GetExitCode(err)
 		if !hasExitCode {

@@ -11,13 +11,16 @@ import (
 var lock sync.Mutex
 
 const (
-	ERROR int = 0
-	INFO  int = 1
-	DEBUG int = 2
+	SILENT int = 0
+	ERROR  int = 1
+	INFO   int = 2
+	DEBUG  int = 3
 )
 
 func levelToString(level int) string {
 	switch level {
+	case SILENT:
+		return "SILENT"
 	case ERROR:
 		return "ERROR"
 	case INFO:

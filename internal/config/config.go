@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os/user"
-	"path/filepath"
 	"sync"
 
 	"github.com/frozengoats/crucible/internal/defaults"
@@ -51,23 +50,11 @@ type Config struct {
 	ValuesStore *kvstore.Store
 	User        *UserConfig
 	Debug       bool
+	Json        bool
 }
 
-func FromFilePaths(cwd string, stackPaths ...string) (*Config, error) {
-	var err error
-	absPaths := []string{}
-	for _, stackPath := range stackPaths {
-		if !filepath.IsAbs(stackPath) {
-			stackPath, err = filepath.Abs(filepath.Join(cwd, stackPath))
-			if err != nil {
-				return nil, fmt.Errorf("problem interpreting path %s\n%w", stackPath, err)
-			}
-		}
-
-		absPaths = append(absPaths, stackPath)
-	}
-
-	b, err := yamlstack.StackYaml(absPaths...)
+func FromFilePaths(stackPaths ...string) (*Config, error) {
+	b, err := yamlstack.StackYaml(stackPaths...)
 	if err != nil {
 		return nil, err
 	}
