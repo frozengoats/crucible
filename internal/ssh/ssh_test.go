@@ -30,7 +30,7 @@ var (
 	CompletionFile string = filepath.Join(ContainerUnixSocketDir, "complete")
 )
 
-var dirName = "/tmp/rsync_test"
+var dirName = "/home/test/rsync_test"
 
 func touch(path string) error {
 	return os.WriteFile(path, []byte{}, 0o777)

@@ -1,0 +1,6 @@
+name: endToEndTest
+description: test and verify all functionality of crucible
+sequence:
+
+  - description: create a directory on the target machine
+    shell: mkdir -p ~/drop-zone

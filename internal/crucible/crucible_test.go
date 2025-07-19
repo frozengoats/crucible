@@ -135,7 +135,6 @@ func (suite *CrucibleTestSuite) TearDownTest() {
 }
 
 func (suite *CrucibleTestSuite) BasicTest() {
-
 }
 
 func TestCrucible(t *testing.T) {
