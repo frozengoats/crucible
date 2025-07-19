@@ -6,11 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/alecthomas/kong"
-	"github.com/frozengoats/crucible/internal/config"
-	"github.com/frozengoats/crucible/internal/executor"
+	"github.com/frozengoats/crucible/internal/crucible"
 	"github.com/frozengoats/crucible/internal/log"
-	"github.com/frozengoats/kvstore"
-	"github.com/goccy/go-yaml"
 )
 
 var Version string = "dev"
@@ -84,76 +81,14 @@ func run() error {
 		}
 		command.Sequence = absPath
 	}
-	return executeSequence(configPaths, valuesPaths, command.Sequence, command.Targets, command.Debug)
-}
 
-func executeSequence(configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool) error {
-	configObj, err := config.FromFilePaths(configPaths...)
-	if err != nil {
-		return err
+	if len(command.Targets) == 0 {
+		return fmt.Errorf("must specify a deploy target, or `all` for all targets")
 	}
-
-	configObj.Debug = command.Debug
-	if configObj.Debug {
-		log.SetLevel(log.DEBUG)
-	} else {
-		log.SetLevel(log.INFO)
+	if len(command.Targets) == 1 && command.Targets[0] == "all" {
+		command.Targets = nil
 	}
-
-	if command.Json {
-		log.SetLevel(log.SILENT)
-		configObj.Json = true
-	}
-
-	valuesStore := kvstore.NewStore()
-	for _, valuesPath := range valuesPaths {
-		valuesBytes, err := os.ReadFile(valuesPath)
-		if err != nil {
-			return fmt.Errorf("unable to read values file at %s", valuesPath)
-		}
-
-		vTarget := map[string]any{}
-		err = yaml.Unmarshal(valuesBytes, &vTarget)
-		if err != nil {
-			return fmt.Errorf("unable to parse yaml from values file at %s", valuesPath)
-		}
-
-		s, err := kvstore.FromMapping(vTarget)
-		if err != nil {
-			return fmt.Errorf("problem creating store from values file at %s\n%w", valuesPath, err)
-		}
-
-		valuesStore = valuesStore.Overlay(s)
-	}
-
-	// set the values storage object and carry it around here
-	configObj.ValuesStore = valuesStore
-
-	selectedHosts := map[string]struct{}{}
-	if len(command.Targets) >= 1 && command.Targets[0] != "all" {
-		for _, hostIdent := range command.Targets {
-			selectedHosts[hostIdent] = struct{}{}
-		}
-	}
-
-	hostIdents := []string{}
-	for hostIdent, hostConfig := range configObj.Hosts {
-		if len(selectedHosts) == 0 {
-			hostIdents = append(hostIdents, hostIdent)
-		} else {
-			if _, ok := selectedHosts[hostIdent]; ok {
-				hostIdents = append(hostIdents, hostIdent)
-			} else if _, ok := selectedHosts[hostConfig.Group]; ok {
-				hostIdents = append(hostIdents, hostIdent)
-			}
-		}
-	}
-
-	if len(hostIdents) == 0 {
-		return fmt.Errorf("no hosts specified")
-	}
-
-	return executor.RunConcurrentExecutionGroup(command.Sequence, configObj, hostIdents)
+	return crucible.ExecuteSequence(configPaths, valuesPaths, command.Sequence, command.Targets, command.Debug, command.Json)
 }
 
 func main() {
