@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/alecthomas/kong"
 	"github.com/frozengoats/crucible/internal/crucible"
@@ -38,57 +37,7 @@ func run() error {
 		}
 	}
 
-	mainConfigPath := filepath.Join(cwd, "config.yaml")
-	_, err = os.Stat(mainConfigPath)
-	if err != nil {
-		return fmt.Errorf("no config.yaml could be located at %s, are you sure this is a crucible configuration?\n%w", mainConfigPath, err)
-	}
-
-	for i, configPath := range command.Configs {
-		if !filepath.IsAbs(configPath) {
-			absPath, err := filepath.Abs(filepath.Join(cwd, configPath))
-			if err != nil {
-				return fmt.Errorf("problem interpreting path %s\n%w", configPath, err)
-			}
-			command.Configs[i] = absPath
-		}
-	}
-	configPaths := append([]string{mainConfigPath}, command.Configs...)
-
-	mainValuesPath := filepath.Join(cwd, "values.yaml")
-	for i, valuesPath := range command.Values {
-		if !filepath.IsAbs(valuesPath) {
-			absPath, err := filepath.Abs(filepath.Join(cwd, valuesPath))
-			if err != nil {
-				return fmt.Errorf("problem interpreting path %s\n%w", valuesPath, err)
-			}
-			command.Values[i] = absPath
-		}
-	}
-
-	var valuesPaths []string
-	_, err = os.Stat(mainConfigPath)
-	if err == nil {
-		valuesPaths = append([]string{mainValuesPath}, command.Values...)
-	} else {
-		valuesPaths = command.Values
-	}
-
-	if !filepath.IsAbs(command.Sequence) {
-		absPath, err := filepath.Abs(command.Sequence)
-		if err != nil {
-			return fmt.Errorf("problem interpreting path %s\n%w", command.Sequence, err)
-		}
-		command.Sequence = absPath
-	}
-
-	if len(command.Targets) == 0 {
-		return fmt.Errorf("must specify a deploy target, or `all` for all targets")
-	}
-	if len(command.Targets) == 1 && command.Targets[0] == "all" {
-		command.Targets = nil
-	}
-	return crucible.ExecuteSequence(configPaths, valuesPaths, command.Sequence, command.Targets, command.Debug, command.Json)
+	return crucible.ExecuteSequenceFromCwd(cwd, command.Configs, command.Values, command.Sequence, command.Targets, command.Debug, command.Json)
 }
 
 func main() {

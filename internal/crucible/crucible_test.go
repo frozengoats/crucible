@@ -134,7 +134,17 @@ func (suite *CrucibleTestSuite) TearDownTest() {
 	_ = os.RemoveAll(AgentUnixSocketDir)
 }
 
-func (suite *CrucibleTestSuite) BasicTest() {
+func (suite *CrucibleTestSuite) EndToEndTest() {
+	err := ExecuteSequenceFromCwd(
+		"/home/test/end-to-end",
+		nil,
+		nil,
+		"./sequences/end-to-end-test.yaml",
+		[]string{"testServer"},
+		false,
+		true,
+	)
+	suite.NoError(err)
 }
 
 func TestCrucible(t *testing.T) {

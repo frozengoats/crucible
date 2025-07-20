@@ -3,6 +3,7 @@ package crucible
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/frozengoats/crucible/internal/executor"
@@ -11,7 +12,61 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-func ExecuteSequence(configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) error {
+func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) error {
+	mainConfigPath := filepath.Join(cwdPath, "config.yaml")
+	_, err := os.Stat(mainConfigPath)
+	if err != nil {
+		return fmt.Errorf("no config.yaml could be located at %s, are you sure this is a crucible configuration?\n%w", mainConfigPath, err)
+	}
+
+	for i, configPath := range extraConfigPaths {
+		if !filepath.IsAbs(configPath) {
+			absPath, err := filepath.Abs(filepath.Join(cwdPath, configPath))
+			if err != nil {
+				return fmt.Errorf("problem interpreting path %s\n%w", configPath, err)
+			}
+			extraConfigPaths[i] = absPath
+		}
+	}
+	configPaths := append([]string{mainConfigPath}, extraConfigPaths...)
+
+	mainValuesPath := filepath.Join(cwdPath, "values.yaml")
+	for i, valuesPath := range extraValuesPaths {
+		if !filepath.IsAbs(valuesPath) {
+			absPath, err := filepath.Abs(filepath.Join(cwdPath, valuesPath))
+			if err != nil {
+				return fmt.Errorf("problem interpreting path %s\n%w", valuesPath, err)
+			}
+			extraValuesPaths[i] = absPath
+		}
+	}
+
+	var valuesPaths []string
+	_, err = os.Stat(mainConfigPath)
+	if err == nil {
+		valuesPaths = append([]string{mainValuesPath}, extraValuesPaths...)
+	} else {
+		valuesPaths = extraValuesPaths
+	}
+
+	if !filepath.IsAbs(sequencePath) {
+		absPath, err := filepath.Abs(sequencePath)
+		if err != nil {
+			return fmt.Errorf("problem interpreting path %s\n%w", sequencePath, err)
+		}
+		sequencePath = absPath
+	}
+
+	if len(targets) == 0 {
+		return fmt.Errorf("must specify a deploy target, or `all` for all targets")
+	}
+	if len(targets) == 1 && targets[0] == "all" {
+		targets = nil
+	}
+	return executeSequence(configPaths, valuesPaths, sequencePath, targets, debug, jsonOutput)
+}
+
+func executeSequence(configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) error {
 	configObj, err := config.FromFilePaths(configPaths...)
 	if err != nil {
 		return err
