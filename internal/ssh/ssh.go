@@ -39,6 +39,8 @@ func WithPassphraseProviderOption(provider PassphraseProvider) SshConfigOption {
 }
 
 func GetPublicKey(keyFile string) (ssh.PublicKey, error) {
+	// TODO: parse public key from private key file, also `test` is incorrect for key name here
+
 	pubKeyFile := fmt.Sprintf("%s.pub", keyFile)
 	key, err := os.ReadFile(pubKeyFile)
 	if err != nil {
@@ -118,7 +120,9 @@ func NewSsh(hostname string, port int, username string, keyFile string, knownHos
 
 func (s *SshSession) Close() error {
 	if s.client != nil {
-		return s.client.Conn.Close()
+		result := s.client.Conn.Close()
+		s.client = nil
+		return result
 	}
 
 	return nil
@@ -158,6 +162,10 @@ func (s *SshSession) hostKeyCallback(hostname string, remote net.Addr, key ssh.P
 }
 
 func (s *SshSession) Connect() error {
+	if s.client != nil {
+		return nil
+	}
+
 	var signer ssh.Signer
 	var authMethod ssh.AuthMethod
 

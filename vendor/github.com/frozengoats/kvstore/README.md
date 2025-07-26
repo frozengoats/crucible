@@ -82,3 +82,14 @@ x := s.GetInt(ParseNamespaceString("x.y[3].z"))
 x := s.GetInt(ParseNamespaceString("x.y[-1]"))
 ```
 
+Exporting the data
+
+```
+s := kvstore.NewStore()
+_ = s.Set("value1", 10)
+_ = s.Set("value2", 20)
+root := s.GetMapping()
+
+// root is now a map[string]any{} object which contains all the data
+// and can be further marshalled to json, yaml, etc.
+```

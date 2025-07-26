@@ -4,3 +4,20 @@ sequence:
 
   - description: create a directory on the target machine
     shell: mkdir -p ~/drop-zone
+
+  - description: verify the directory was created
+    shell: ls -la ~/drop-zone
+
+  - description: put some known text in the file
+    shell: echo "hello world" > ~/drop-zone/hello.txt
+
+  - name: hello
+    description: pull known text from file
+    shell: cat ~/drop-zone/hello.txt
+
+  - when: "trim(.Context.hello.stdout) == 'hello world'"
+    description: place another file, confirming that the when clause worked
+    shell: echo "when is good" > ~/drop-zone/when.txt
+
+  - description: verify the when file
+    shell: ls -la ~/drop-zone/when.txt

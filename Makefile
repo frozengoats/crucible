@@ -9,7 +9,7 @@ DOCKER_GID := $(shell getent group docker | cut -d: -f3)
 
 .PHONY: test
 test: testcontainer
-	$(GO_RUN_TEST) --timeout 5m $(PACKAGES)
+	$(GO_RUN_TEST) -p 1 --timeout 5m $(PACKAGES)
 
 .PHONY: lint-check
 lint-check:

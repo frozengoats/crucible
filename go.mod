@@ -9,7 +9,7 @@ require (
 	github.com/docker/docker v28.0.1+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/frozengoats/eval v0.0.1
-	github.com/frozengoats/kvstore v0.1.3
+	github.com/frozengoats/kvstore v0.1.4
 	github.com/goccy/go-yaml v1.17.1
 	github.com/skeema/knownhosts v1.3.1
 	github.com/stretchr/testify v1.10.0

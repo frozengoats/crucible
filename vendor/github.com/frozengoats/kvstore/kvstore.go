@@ -187,9 +187,13 @@ func FromMapping(mapping map[string]any) (*Store, error) {
 // namespace.
 func (s *Store) get(namespace ...any) (any, bool) {
 	var root any
-
 	root = s.data
 	total_ns_keys := len(namespace)
+
+	if total_ns_keys == 0 {
+		return root, true
+	}
+
 	for i, ns := range namespace {
 		switch nsTyped := ns.(type) {
 		case string:
@@ -449,6 +453,23 @@ func (s *Store) GetArray(namespace ...any) []any {
 	}
 
 	t, ok := v.([]any)
+	if ok {
+		return t
+	}
+
+	return value
+}
+
+// GetByteArray retrieves an a byte array from the store.  A byte array is considered different than a normal array of "any"
+// type, in that it is treated as a single unit of data, rather than a generic array.
+func (s *Store) GetByteArray(namespace ...any) []byte {
+	var value []byte
+	v, ok := s.get(namespace...)
+	if !ok {
+		return value
+	}
+
+	t, ok := v.([]byte)
 	if ok {
 		return t
 	}

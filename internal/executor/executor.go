@@ -15,10 +15,17 @@ import (
 )
 
 type ResultObj struct {
-	SuccessCount          int      `json:"successCount"`
-	FailCount             int      `json:"failCount"`
-	SuccessHostIdentities []string `json:"successHostIdentities"`
-	FailHostIdentities    []string `json:"failHostIdentities"`
+	SuccessCount int           `json:"successCount"`
+	FailCount    int           `json:"failCount"`
+	SuccessHosts []string      `json:"successHosts"`
+	FailHosts    []*FailedHost `json:"failHosts"`
+}
+
+type FailedHost struct {
+	Identity    string `json:"identity"`
+	Error       string
+	Contexts    []json.RawMessage
+	FullContext json.RawMessage
 }
 
 type Executor struct {
@@ -75,6 +82,11 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		return nil, err
 	}
 
+	err = executionClient.Connect()
+	if err != nil {
+		return nil, err
+	}
+
 	ex := &Executor{
 		Config:            cfg,
 		HostConfig:        hostConfig,
@@ -102,6 +114,7 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 		if err != nil {
 			return nil, fmt.Errorf("unable to create executor\n%w", err)
 		}
+		defer e.ExecutionInstance.Close()
 		executors = append(executors, e)
 	}
 
@@ -171,17 +184,25 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 	close(execChan)
 
 	resultObj := &ResultObj{
-		SuccessHostIdentities: []string{},
-		FailHostIdentities:    []string{},
+		SuccessHosts: []string{},
+		FailHosts:    []*FailedHost{},
 	}
 
 	for _, e := range executors {
 		if e.ExecutionInstance.GetError() != nil {
 			resultObj.FailCount++
-			resultObj.FailHostIdentities = append(resultObj.FailHostIdentities, e.HostIdent)
+			fh := &FailedHost{Identity: e.HostIdent, Error: e.ExecutionInstance.GetError().Error()}
+			if e.Config.Debug {
+				jBytes, err := json.Marshal(e.ExecutionInstance.ExecContext)
+				if err != nil {
+					return nil, fmt.Errorf("unable to export final execution context: %w", err)
+				}
+				fh.FullContext = jBytes
+			}
+			resultObj.FailHosts = append(resultObj.FailHosts, fh)
 		} else {
 			resultObj.SuccessCount++
-			resultObj.SuccessHostIdentities = append(resultObj.SuccessHostIdentities, e.HostIdent)
+			resultObj.SuccessHosts = append(resultObj.SuccessHosts, e.HostIdent)
 		}
 	}
 

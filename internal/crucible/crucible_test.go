@@ -2,6 +2,7 @@ package crucible
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
@@ -12,6 +13,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/go-connections/nat"
 	"github.com/frozengoats/crucible/internal/ssh"
+	"github.com/frozengoats/kvstore"
+	"github.com/goccy/go-yaml"
 	"github.com/stretchr/testify/suite"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -134,17 +137,40 @@ func (suite *CrucibleTestSuite) TearDownTest() {
 	_ = os.RemoveAll(AgentUnixSocketDir)
 }
 
-func (suite *CrucibleTestSuite) EndToEndTest() {
-	err := ExecuteSequenceFromCwd(
-		"/home/test/end-to-end",
-		nil,
+func (suite *CrucibleTestSuite) TestEndToEnd() {
+	location := "/home/test/end-to-end"
+	_, err := os.Stat("/home/test/end-to-end")
+	if err != nil {
+		location, err = filepath.Abs(filepath.Join("..", "..", "testcontainer", "end-to-end"))
+		suite.NoError(err)
+	}
+
+	extraConfig := kvstore.NewStore()
+	extraConfig.Set(suite.sshHost, "hosts", "testServer", "host")
+	extraConfigBytes, err := yaml.Marshal(extraConfig.GetMapping())
+	suite.NoError(err)
+
+	extraConfigFile := "/tmp/extraHostConfig.yaml"
+	err = os.WriteFile(extraConfigFile, extraConfigBytes, 0666)
+	suite.NoError(err)
+
+	jsonResult, err := ExecuteSequenceFromCwd(
+		location,
+		[]string{extraConfigFile},
 		nil,
 		"./sequences/end-to-end-test.yaml",
 		[]string{"testServer"},
-		false,
+		true,
 		true,
 	)
 	suite.NoError(err)
+	m := map[string]any{}
+	err = json.Unmarshal(jsonResult, &m)
+	suite.NoError(err)
+
+	suite.T().Log("logging the unmarshal result")
+	suite.T().Log(string(jsonResult))
+	suite.NoError(fmt.Errorf("error"))
 }
 
 func TestCrucible(t *testing.T) {

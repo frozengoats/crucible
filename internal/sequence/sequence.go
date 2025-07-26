@@ -161,9 +161,10 @@ type ExecutionInstance struct {
 	totalExecutionSteps  int
 	executionStack       []SeqPos
 	currentExecutionStep int
+	immediateContexts    []json.RawMessage
 
 	varContext  *kvstore.Store // variable context
-	execContext *kvstore.Store // context accumulated through execution ()
+	ExecContext *kvstore.Store // context accumulated through execution ()
 	lock        sync.Mutex
 
 	err error
@@ -179,7 +180,7 @@ func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClie
 		sequence:             s,
 		totalExecutionSteps:  s.CountExecutionSteps(),
 		varContext:           kvstore.NewStore(),
-		execContext:          kvstore.NewStore(),
+		ExecContext:          kvstore.NewStore(),
 	}
 }
 
@@ -279,10 +280,14 @@ func (ei *ExecutionInstance) variableLookup(key string) (any, error) {
 		store = ei.varContext
 	} else {
 		key = strings.TrimPrefix(key, ".Context.")
-		store = ei.execContext
+		store = ei.ExecContext
 	}
 
 	return store.Get(kvstore.ParseNamespaceString(key)...), nil
+}
+
+func (ei *ExecutionInstance) Close() error {
+	return ei.executionClient.Close()
 }
 
 func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.Store) error {
@@ -346,6 +351,14 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 		immediateContext.Set(stdout, "stdout")
 		immediateContext.Set(exitCode, "exitCode")
 
+		if ei.config.Debug {
+			jBytes, err := json.Marshal(immediateContext.GetMapping())
+			if err != nil {
+				return fmt.Errorf("unable to export immediate context: %w", err)
+			}
+			ei.immediateContexts = append(ei.immediateContexts, jBytes)
+		}
+
 		if exitCode == 0 {
 			if action.ParseJson {
 				jsonMap := map[string]any{}
@@ -398,12 +411,12 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 		actionFqNamespace = append(actionFqNamespace, action.Name)
 		actionLocalNamespace := action.Name
 
-		err = ei.execContext.Set(immediateContext.GetMapping(), actionFqNamespace)
+		err = ei.ExecContext.Set(immediateContext.GetMapping(), actionFqNamespace)
 		if err != nil {
 			return fmt.Errorf("unable to set fully qualified context data on store: %w", err)
 		}
 
-		err = ei.execContext.Set(immediateContext.GetMapping(), actionLocalNamespace)
+		err = ei.ExecContext.Set(immediateContext.GetMapping(), actionLocalNamespace)
 		if err != nil {
 			return fmt.Errorf("unable to set fully local context data on store: %w", err)
 		}
