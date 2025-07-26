@@ -37,7 +37,11 @@ func run() error {
 		}
 	}
 
-	return crucible.ExecuteSequenceFromCwd(cwd, command.Configs, command.Values, command.Sequence, command.Targets, command.Debug, command.Json)
+	jsonResult, err := crucible.ExecuteSequenceFromCwd(cwd, command.Configs, command.Values, command.Sequence, command.Targets, command.Debug, command.Json)
+	if command.Json {
+		fmt.Println(string(jsonResult))
+	}
+	return err
 }
 
 func main() {

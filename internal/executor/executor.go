@@ -89,7 +89,7 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 }
 
 // RunConcurrentExecutionGroup creates and runs concurrent execution groups
-func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, hostIdents []string) error {
+func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, hostIdents []string) ([]byte, error) {
 	maxConcurrentHosts := configObj.Executor.MaxConcurrentHosts
 	if len(hostIdents) < maxConcurrentHosts {
 		maxConcurrentHosts = len(hostIdents)
@@ -100,7 +100,7 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 	for _, hostIdent := range hostIdents {
 		e, err := NewExecutor(configObj, hostIdent, sequencePath)
 		if err != nil {
-			return fmt.Errorf("unable to create executor\n%w", err)
+			return nil, fmt.Errorf("unable to create executor\n%w", err)
 		}
 		executors = append(executors, e)
 	}
@@ -185,13 +185,10 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 		}
 	}
 
-	if configObj.Json {
-		resultObjBytes, err := json.Marshal(resultObj)
-		if err != nil {
-			return fmt.Errorf("unable to marshal result object to JSON: %w", err)
-		}
-		fmt.Println(string(resultObjBytes))
+	resultObjBytes, err := json.Marshal(resultObj)
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal result object to JSON: %w", err)
 	}
 
-	return nil
+	return resultObjBytes, nil
 }

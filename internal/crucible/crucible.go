@@ -12,18 +12,18 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) error {
+func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) ([]byte, error) {
 	mainConfigPath := filepath.Join(cwdPath, "config.yaml")
 	_, err := os.Stat(mainConfigPath)
 	if err != nil {
-		return fmt.Errorf("no config.yaml could be located at %s, are you sure this is a crucible configuration?\n%w", mainConfigPath, err)
+		return nil, fmt.Errorf("no config.yaml could be located at %s, are you sure this is a crucible configuration?\n%w", mainConfigPath, err)
 	}
 
 	for i, configPath := range extraConfigPaths {
 		if !filepath.IsAbs(configPath) {
 			absPath, err := filepath.Abs(filepath.Join(cwdPath, configPath))
 			if err != nil {
-				return fmt.Errorf("problem interpreting path %s\n%w", configPath, err)
+				return nil, fmt.Errorf("problem interpreting path %s\n%w", configPath, err)
 			}
 			extraConfigPaths[i] = absPath
 		}
@@ -35,14 +35,14 @@ func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValu
 		if !filepath.IsAbs(valuesPath) {
 			absPath, err := filepath.Abs(filepath.Join(cwdPath, valuesPath))
 			if err != nil {
-				return fmt.Errorf("problem interpreting path %s\n%w", valuesPath, err)
+				return nil, fmt.Errorf("problem interpreting path %s\n%w", valuesPath, err)
 			}
 			extraValuesPaths[i] = absPath
 		}
 	}
 
 	var valuesPaths []string
-	_, err = os.Stat(mainConfigPath)
+	_, err = os.Stat(mainValuesPath)
 	if err == nil {
 		valuesPaths = append([]string{mainValuesPath}, extraValuesPaths...)
 	} else {
@@ -50,15 +50,15 @@ func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValu
 	}
 
 	if !filepath.IsAbs(sequencePath) {
-		absPath, err := filepath.Abs(sequencePath)
+		absPath, err := filepath.Abs(filepath.Join(cwdPath, sequencePath))
 		if err != nil {
-			return fmt.Errorf("problem interpreting path %s\n%w", sequencePath, err)
+			return nil, fmt.Errorf("problem interpreting path %s\n%w", sequencePath, err)
 		}
 		sequencePath = absPath
 	}
 
 	if len(targets) == 0 {
-		return fmt.Errorf("must specify a deploy target, or `all` for all targets")
+		return nil, fmt.Errorf("must specify a deploy target, or `all` for all targets")
 	}
 	if len(targets) == 1 && targets[0] == "all" {
 		targets = nil
@@ -66,10 +66,10 @@ func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValu
 	return executeSequence(configPaths, valuesPaths, sequencePath, targets, debug, jsonOutput)
 }
 
-func executeSequence(configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) error {
+func executeSequence(configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) ([]byte, error) {
 	configObj, err := config.FromFilePaths(configPaths...)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	configObj.Debug = debug
@@ -88,18 +88,18 @@ func executeSequence(configPaths []string, valuesPaths []string, sequencePath st
 	for _, valuesPath := range valuesPaths {
 		valuesBytes, err := os.ReadFile(valuesPath)
 		if err != nil {
-			return fmt.Errorf("unable to read values file at %s", valuesPath)
+			return nil, fmt.Errorf("unable to read values file at %s", valuesPath)
 		}
 
 		vTarget := map[string]any{}
 		err = yaml.Unmarshal(valuesBytes, &vTarget)
 		if err != nil {
-			return fmt.Errorf("unable to parse yaml from values file at %s", valuesPath)
+			return nil, fmt.Errorf("unable to parse yaml from values file at %s", valuesPath)
 		}
 
 		s, err := kvstore.FromMapping(vTarget)
 		if err != nil {
-			return fmt.Errorf("problem creating store from values file at %s\n%w", valuesPath, err)
+			return nil, fmt.Errorf("problem creating store from values file at %s\n%w", valuesPath, err)
 		}
 
 		valuesStore = valuesStore.Overlay(s)
@@ -129,7 +129,7 @@ func executeSequence(configPaths []string, valuesPaths []string, sequencePath st
 	}
 
 	if len(hostIdents) == 0 {
-		return fmt.Errorf("no hosts specified")
+		return nil, fmt.Errorf("no hosts specified")
 	}
 
 	return executor.RunConcurrentExecutionGroup(sequencePath, configObj, hostIdents)

@@ -17,20 +17,20 @@ import (
 )
 
 const (
-	SshdImage              string = "frozengoats/sshd:0"
-	SshAgentImage          string = "frozengoats/ssh-agent:0"
-	AgentUnixSocketDir     string = "/tmp/sshtest"
-	ContainerUnixSocketDir string = "/etc/sshtest"
-	SshPort                string = "22"
-	KnownHostsFile         string = "/tmp/sshtest/known_hosts"
-	TestPassphrase         string = "testphrase"
+	SshdImage          string = "frozengoats/sshd:0"
+	SshAgentImage      string = "frozengoats/ssh-agent:0"
+	AgentUnixSocketDir string = "/tmp/sshtest"
+	SshPort            string = "22"
+	KnownHostsFile     string = "/tmp/sshtest/known_hosts"
+	TestPassphrase     string = "testphrase"
 )
 
 var (
-	CompletionFile string = filepath.Join(ContainerUnixSocketDir, "complete")
+	CompletionFile  string = filepath.Join(AgentUnixSocketDir, "complete")
+	AgentSocketFile string = filepath.Join(AgentUnixSocketDir, "agent.sock")
 )
 
-var dirName = "/home/test/rsync_test"
+var dirName = "/tmp/rsync_test"
 
 func touch(path string) error {
 	return os.WriteFile(path, []byte{}, 0o777)
@@ -135,16 +135,20 @@ func (suite *SshTestSuite) SetupTest() {
 	cUser, err := user.Current()
 	suite.NoError(err)
 
-	socketFile := filepath.Join(ContainerUnixSocketDir, "agent.sock")
 	req = testcontainers.ContainerRequest{
 		Image:           SshAgentImage,
 		AlwaysPullImage: true,
 		WaitingFor:      wait.ForFile(CompletionFile).WithStartupTimeout(10 * time.Second),
 		Env: map[string]string{
 			"COMPLETION_FILE": CompletionFile,
-			"SSH_AUTH_SOCK":   socketFile,
+			"SSH_AUTH_SOCK":   AgentSocketFile,
 		},
-		Mounts: testcontainers.Mounts(testcontainers.BindMount(AgentUnixSocketDir, testcontainers.ContainerMountTarget(ContainerUnixSocketDir))),
+		Mounts: testcontainers.Mounts(
+			testcontainers.BindMount(
+				"/tmp",
+				"/tmp",
+			),
+		),
 		ConfigModifier: func(c *container.Config) {
 			c.User = fmt.Sprintf("%s:%s", cUser.Uid, cUser.Gid)
 		},
@@ -156,11 +160,12 @@ func (suite *SshTestSuite) SetupTest() {
 	})
 	suite.NoError(err)
 
-	err = InitAgentInstance(WithSshAuthSock(filepath.Join(AgentUnixSocketDir, "agent.sock")))
+	err = InitAgentInstance(WithSshAuthSock(AgentSocketFile))
 	suite.NoError(err)
 
 	err = os.WriteFile(KnownHostsFile, []byte{}, 0600)
 	suite.NoError(err)
+
 	_, err = GetKnownHostsInstance(KnownHostsFile)
 	suite.NoError(err)
 }
@@ -220,6 +225,7 @@ func (suite *SshTestSuite) TestKeyWithPassphrase() {
 	// block entry with bad passphrase on locked private key
 	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("badphrase")))
 	defer sshSession.Close()
+
 	err := sshSession.Connect()
 	suite.Error(err)
 
