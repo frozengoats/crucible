@@ -68,9 +68,9 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		executionClient = ssh.NewSsh(
 			cfg.Hostname(hostIdent),
 			cfg.Port(hostIdent),
-			cfg.KnownHostsFile(hostIdent),
 			cfg.Username(hostIdent),
 			cfg.KeyPath(hostIdent),
+			cfg.KnownHostsFile(hostIdent),
 			ssh.WithIgnoreHostKeyChangeOption(cfg.IgnoreHostKeyChange(hostIdent)),
 			ssh.WithAllowUnknownHostsOption(cfg.AllowUnknownHost(hostIdent)),
 			ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),

@@ -10,8 +10,9 @@ RUN addgroup -S test --gid ${GID} && \
     echo "test ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
     mkdir -p /home/test/.ssh
 
-COPY id_ed25519 /home/test/.ssh/
+COPY id_ed2551* /home/test/.ssh/
 COPY end-to-end /home/test/end-to-end
+RUN touch /home/test/.ssh/known_hosts && chmod 600 /home/test/.ssh/known_hosts
 RUN chown -R test:test /home/test
 
 WORKDIR /home/test

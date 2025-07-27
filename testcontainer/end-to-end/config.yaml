@@ -1,5 +1,7 @@
+executor:
+  ssh:
+    keyPath: /home/test/.ssh/id_ed25519
+
 hosts:
-
   testServer:
-
     host: 127.0.0.1

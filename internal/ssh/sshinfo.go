@@ -41,6 +41,10 @@ func GetSshInfo(hostAlias string) (*SshInfo, error) {
 		case "identityfile":
 			sshInfo.KeyPath = value
 		case "userknownhostsfile":
+			// can contain multiple paths here, separated by spaces
+			if strings.Contains(value, " ") {
+				value = strings.Split(value, " ")[0]
+			}
 			sshInfo.KnownHostsPath = value
 		case "hostname":
 			sshInfo.Hostname = value

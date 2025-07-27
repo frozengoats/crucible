@@ -39,9 +39,12 @@ func WithPassphraseProviderOption(provider PassphraseProvider) SshConfigOption {
 }
 
 func GetPublicKey(keyFile string) (ssh.PublicKey, error) {
-	// TODO: parse public key from private key file, also `test` is incorrect for key name here
-
 	pubKeyFile := fmt.Sprintf("%s.pub", keyFile)
+	_, err := os.Stat(pubKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("a public key named %s could not be located", pubKeyFile)
+	}
+
 	key, err := os.ReadFile(pubKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read public key %s\n%w", pubKeyFile, err)
@@ -169,10 +172,14 @@ func (s *SshSession) Connect() error {
 	var signer ssh.Signer
 	var authMethod ssh.AuthMethod
 
+	_, err := os.Stat(s.keyFile)
+	if err != nil {
+		return fmt.Errorf("keyfile %s was not found - if you did not explicitly provide this keyfile, please specify the correct one in the configuration", s.keyFile)
+	}
+
 	sshAgent, err := GetAgentInstance()
 	if err != nil {
 		// this means there's no ssh agent available
-		fmt.Printf("warning: %s\n", err.Error())
 		signer, _, err = GetPrivateKeySigner(s.keyFile, s.options.passphraseProvider)
 		if err != nil {
 			return err
@@ -218,7 +225,7 @@ func (s *SshSession) Connect() error {
 	if s.port != 22 {
 		host = fmt.Sprintf("%s:%d", host, s.port)
 	}
-	client, err := ssh.Dial("tcp", s.hostname, sshConfig)
+	client, err := ssh.Dial("tcp", host, sshConfig)
 	if err != nil {
 		return fmt.Errorf("unable to establish ssh connection for %s\n%w", host, err)
 	}

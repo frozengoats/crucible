@@ -80,7 +80,7 @@ func NewKnownHosts(options ...KnownHostOption) (*SshKnownHosts, error) {
 
 	kh, err := knownhosts.NewDB(knownHostOptions.knownHostsFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to load known_hosts file from %s\n%w", knownHostOptions.knownHostsFile, err)
+		return nil, fmt.Errorf("error initializing known_hosts database from %s\n%w", knownHostOptions.knownHostsFile, err)
 	}
 
 	return &SshKnownHosts{

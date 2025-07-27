@@ -26,7 +26,6 @@ const (
 	AgentUnixSocketDir     string = "/tmp/sshtest"
 	ContainerUnixSocketDir string = "/etc/sshtest"
 	SshPort                string = "22"
-	KnownHostsFile         string = "/tmp/sshtest/known_hosts"
 	TestPassphrase         string = "testphrase"
 )
 
@@ -117,11 +116,6 @@ func (suite *CrucibleTestSuite) SetupTest() {
 	suite.NoError(err)
 
 	err = ssh.InitAgentInstance(ssh.WithSshAuthSock(filepath.Join(AgentUnixSocketDir, "agent.sock")))
-	suite.NoError(err)
-
-	err = os.WriteFile(KnownHostsFile, []byte{}, 0600)
-	suite.NoError(err)
-	_, err = ssh.GetKnownHostsInstance(KnownHostsFile)
 	suite.NoError(err)
 }
 
