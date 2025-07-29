@@ -6,8 +6,10 @@ import (
 )
 
 var lookup = map[string]func(args ...any) (any, error){
-	"len":  length,
-	"trim": trim,
+	"len":   length,
+	"trim":  trim,
+	"line":  line,
+	"lines": lines,
 }
 
 func length(args ...any) (any, error) {
@@ -35,6 +37,34 @@ func trim(args ...any) (any, error) {
 	switch t := arg.(type) {
 	case string:
 		return strings.Trim(t, "\n "), nil
+	default:
+		return nil, fmt.Errorf("invalid argument type")
+	}
+}
+
+func line(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	arg := args[0]
+	switch t := arg.(type) {
+	case string:
+		return strings.Split(t, "\n")[0], nil
+	default:
+		return nil, fmt.Errorf("invalid argument type")
+	}
+}
+
+func lines(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	arg := args[0]
+	switch t := arg.(type) {
+	case string:
+		return strings.Split(strings.TrimSuffix(t, "\n"), "\n"), nil
 	default:
 		return nil, fmt.Errorf("invalid argument type")
 	}

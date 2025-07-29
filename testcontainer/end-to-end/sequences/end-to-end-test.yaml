@@ -2,6 +2,15 @@ name: endToEndTest
 description: test and verify all functionality of crucible
 sequence:
 
+  - description: list the contents of the current directory
+    shell: ls -la
+
+  - description: get the current working directory
+    shell: pwd
+
+  - description: get the current user
+    shell: whoami
+
   - description: create a directory on the target machine
     shell: mkdir -p ~/drop-zone
 
@@ -15,9 +24,19 @@ sequence:
     description: pull known text from file
     shell: cat ~/drop-zone/hello.txt
 
-  - when: "trim(.Context.hello.stdout) == 'hello world'"
+  - when: "line(.Context.hello.stdout) == 'hello world'"
     description: place another file, confirming that the when clause worked
     shell: echo "when is good" > ~/drop-zone/when.txt
 
   - description: verify the when file
     shell: ls -la ~/drop-zone/when.txt
+
+  - description: iterate the number set and make some output files
+    iterate: .Values.things.numbers
+    action:
+      echo {{ .Context.$.item }}
+
+  - description: cause the system to break with a bad request
+    shell: ls -la ~/ddd
+
+

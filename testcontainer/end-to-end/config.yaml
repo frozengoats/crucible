@@ -1,6 +1,7 @@
 executor:
   ssh:
     keyPath: /home/test/.ssh/id_ed25519
+    allowUnknownHost: true
 
 hosts:
   testServer:

@@ -19,7 +19,15 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
+const ImmediateKey string = "__immediate"
+
 var EndOfSequence = errors.New("end of sequence reached")
+
+type ActionContext struct {
+	Name        string
+	Description string
+	Context     json.RawMessage
+}
 
 type SeqPos struct {
 	Sequence *Sequence
@@ -72,7 +80,13 @@ func (a *Action) GetExecutionString() ([]string, bool) {
 		return a.Exec, true
 	}
 
-	return []string{"sh", "-c", a.Shell}, true
+	var shellStr string
+	if strings.Contains(a.Shell, "\"") {
+		shellStr = fmt.Sprintf("'%s'", a.Shell)
+	} else {
+		shellStr = fmt.Sprintf("\"%s\"", a.Shell)
+	}
+	return []string{"sh", "-c", shellStr}, true
 }
 
 type Sequence struct {
@@ -161,7 +175,7 @@ type ExecutionInstance struct {
 	totalExecutionSteps  int
 	executionStack       []SeqPos
 	currentExecutionStep int
-	immediateContexts    []json.RawMessage
+	ImmediateContexts    []*ActionContext
 
 	varContext  *kvstore.Store // variable context
 	ExecContext *kvstore.Store // context accumulated through execution ()
@@ -188,8 +202,8 @@ func (ei *ExecutionInstance) SetError(err error) {
 	ei.err = err
 }
 
-func (ei *ExecutionInstance) GetCurrentNamespace() []string {
-	var curNs []string
+func (ei *ExecutionInstance) GetCurrentNamespace() []any {
+	var curNs []any
 	for _, s := range ei.executionStack {
 		curNs = append(curNs, s.Sequence.Name)
 	}
@@ -278,6 +292,9 @@ func (ei *ExecutionInstance) variableLookup(key string) (any, error) {
 	if strings.HasPrefix(key, ".Values.") {
 		key = strings.TrimPrefix(key, ".Values.")
 		store = ei.varContext
+	} else if strings.HasPrefix(key, ".$.") {
+		key = strings.TrimPrefix(key, ".Values.")
+		store = ei.varContext
 	} else {
 		key = strings.TrimPrefix(key, ".Context.")
 		store = ei.ExecContext
@@ -290,7 +307,7 @@ func (ei *ExecutionInstance) Close() error {
 	return ei.executionClient.Close()
 }
 
-func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.Store) error {
+func (ei *ExecutionInstance) Execute(action *Action) error {
 	context := []any{
 		"host", ei.hostIdent,
 	}
@@ -322,10 +339,8 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 		}
 
 		for _, item := range iterableArray {
-			imContext := immediateContext.DeepCopy()
-			imContext.Set(item, "item")
-
-			err = ei.Execute(action.Action, imContext)
+			ei.ExecContext.Set(item, ImmediateKey, "item")
+			err = ei.Execute(action.Action)
 			if err != nil {
 				return err
 			}
@@ -348,15 +363,19 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 
 		log.Debug(context, "exit code: %d", exitCode)
 		log.Debug(context, "stdout\n%s", string(stdout))
-		immediateContext.Set(stdout, "stdout")
-		immediateContext.Set(exitCode, "exitCode")
+		ei.ExecContext.Set(string(stdout), ImmediateKey, "stdout")
+		ei.ExecContext.Set(exitCode, ImmediateKey, "exitCode")
 
 		if ei.config.Debug {
-			jBytes, err := json.Marshal(immediateContext.GetMapping())
+			jBytes, err := json.Marshal(ei.ExecContext.GetMapping(ImmediateKey))
 			if err != nil {
 				return fmt.Errorf("unable to export immediate context: %w", err)
 			}
-			ei.immediateContexts = append(ei.immediateContexts, jBytes)
+			ei.ImmediateContexts = append(ei.ImmediateContexts, &ActionContext{
+				Name:        action.Name,
+				Description: action.Description,
+				Context:     jBytes,
+			})
 		}
 
 		if exitCode == 0 {
@@ -366,7 +385,7 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 				if err != nil {
 					return fmt.Errorf("unable to unmarshal json from stdout: %w", err)
 				}
-				immediateContext.Set("json", jsonMap)
+				ei.ExecContext.Set(jsonMap, ImmediateKey, "json")
 			}
 
 			if action.ParseYaml {
@@ -375,7 +394,7 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 				if err != nil {
 					return fmt.Errorf("unable to unmarshal yaml from stdout: %w", err)
 				}
-				immediateContext.Set("yaml", yamlMap)
+				ei.ExecContext.Set(yamlMap, ImmediateKey, "yaml")
 			}
 		}
 
@@ -406,17 +425,17 @@ func (ei *ExecutionInstance) Execute(action *Action, immediateContext *kvstore.S
 	// at this point it is safe to propagate all transient data to the context, if context names exist
 	if action.Name != "" {
 		parentNamespace := ei.GetCurrentNamespace()
-		var actionFqNamespace []string
+		var actionFqNamespace []any
 		actionFqNamespace = append(actionFqNamespace, parentNamespace...)
 		actionFqNamespace = append(actionFqNamespace, action.Name)
 		actionLocalNamespace := action.Name
 
-		err = ei.ExecContext.Set(immediateContext.GetMapping(), actionFqNamespace)
+		err = ei.ExecContext.Set(ei.ExecContext.GetMapping(ImmediateKey), actionFqNamespace...)
 		if err != nil {
 			return fmt.Errorf("unable to set fully qualified context data on store: %w", err)
 		}
 
-		err = ei.ExecContext.Set(immediateContext.GetMapping(), actionLocalNamespace)
+		err = ei.ExecContext.Set(ei.ExecContext.GetMapping(ImmediateKey), actionLocalNamespace)
 		if err != nil {
 			return fmt.Errorf("unable to set fully local context data on store: %w", err)
 		}

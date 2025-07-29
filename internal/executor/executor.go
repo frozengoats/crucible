@@ -11,7 +11,6 @@ import (
 	"github.com/frozengoats/crucible/internal/log"
 	"github.com/frozengoats/crucible/internal/sequence"
 	"github.com/frozengoats/crucible/internal/ssh"
-	"github.com/frozengoats/kvstore"
 )
 
 type ResultObj struct {
@@ -24,7 +23,7 @@ type ResultObj struct {
 type FailedHost struct {
 	Identity    string `json:"identity"`
 	Error       string
-	Contexts    []json.RawMessage
+	Contexts    []*sequence.ActionContext
 	FullContext json.RawMessage
 }
 
@@ -140,7 +139,7 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 						}
 
 						// execute the action here
-						err := e.ExecutionInstance.Execute(action, kvstore.NewStore())
+						err := e.ExecutionInstance.Execute(action)
 						if syncExecutionSteps || err != nil {
 							if err != nil {
 								e.ExecutionInstance.SetError(err)
@@ -193,11 +192,12 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 			resultObj.FailCount++
 			fh := &FailedHost{Identity: e.HostIdent, Error: e.ExecutionInstance.GetError().Error()}
 			if e.Config.Debug {
-				jBytes, err := json.Marshal(e.ExecutionInstance.ExecContext)
+				jBytes, err := json.Marshal(e.ExecutionInstance.ExecContext.GetMapping())
 				if err != nil {
 					return nil, fmt.Errorf("unable to export final execution context: %w", err)
 				}
 				fh.FullContext = jBytes
+				fh.Contexts = e.ExecutionInstance.ImmediateContexts
 			}
 			resultObj.FailHosts = append(resultObj.FailHosts, fh)
 		} else {

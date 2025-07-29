@@ -11,6 +11,7 @@ type VariableLookup func(key string) (any, error)
 type FunctionCall func(name string, args ...any) (any, error)
 
 var variableFinder = regexp.MustCompile(`^\.[a-zA-Z_]`)
+var templateFinder = regexp.MustCompile(`{{\s+.*?\s+}}`)
 
 const (
 	OperatorEquals        string = "=="
@@ -613,4 +614,34 @@ func AsMapping(value any) map[string]any {
 	default:
 		return nil
 	}
+}
+
+func Template(template string, varLookup VariableLookup, funcCall FunctionCall) (string, error) {
+	matches := templateFinder.FindAllStringSubmatchIndex(template, -1)
+	var newParts []string
+	lastEnd := 0
+	for _, match := range matches {
+		start := match[0]
+		end := match[1]
+
+		if lastEnd < start {
+			newParts = append(newParts, template[lastEnd:start])
+		}
+
+		result, err := Evaluate(template[start+2:end-2], varLookup, funcCall)
+		if err != nil {
+			return "", err
+		}
+
+		lastEnd = end
+		if result == nil {
+			result = ""
+		}
+		newParts = append(newParts, fmt.Sprintf("%v", result))
+	}
+	if lastEnd < len(template) {
+		newParts = append(newParts, template[lastEnd:])
+	}
+	finalString := strings.Join(newParts, "")
+	return finalString, nil
 }
