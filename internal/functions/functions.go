@@ -6,10 +6,11 @@ import (
 )
 
 var lookup = map[string]func(args ...any) (any, error){
-	"len":   length,
-	"trim":  trim,
-	"line":  line,
-	"lines": lines,
+	"len":       length,
+	"trim":      trim,
+	"line":      line,
+	"lines":     lines,
+	"to_string": to_string,
 }
 
 func length(args ...any) (any, error) {
@@ -68,6 +69,15 @@ func lines(args ...any) (any, error) {
 	default:
 		return nil, fmt.Errorf("invalid argument type")
 	}
+}
+
+func to_string(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	arg := args[0]
+	return fmt.Sprintf("%v", arg), nil
 }
 
 func Call(name string, args ...any) (any, error) {

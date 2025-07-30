@@ -48,10 +48,14 @@ func reCastFloatArray(value []float64) []any {
 }
 
 func verifySlice(data []any) error {
-	for _, v := range data {
+	for i, v := range data {
 		switch t := v.(type) {
 		case bool:
 		case int:
+		case int64:
+			data[i] = int(t)
+		case uint64:
+			data[i] = int(t)
 		case float64:
 		case string:
 		case nil:
@@ -77,6 +81,10 @@ func verifyMapping(data map[string]any) error {
 	for k, v := range data {
 		switch t := v.(type) {
 		case bool:
+		case int64:
+			data[k] = int(t)
+		case uint64:
+			data[k] = int(t)
 		case int:
 		case float64:
 		case string:

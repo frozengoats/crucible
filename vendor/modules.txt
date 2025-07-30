@@ -83,7 +83,7 @@ github.com/felixge/httpsnoop
 # github.com/frozengoats/eval v0.0.2
 ## explicit; go 1.24.0
 github.com/frozengoats/eval
-# github.com/frozengoats/kvstore v0.1.4
+# github.com/frozengoats/kvstore v0.1.6
 ## explicit; go 1.21.4
 github.com/frozengoats/kvstore
 # github.com/go-logr/logr v1.4.2
@@ -97,7 +97,7 @@ github.com/go-logr/stdr
 ## explicit; go 1.12
 github.com/go-ole/go-ole
 github.com/go-ole/go-ole/oleutil
-# github.com/goccy/go-yaml v1.17.1
+# github.com/goccy/go-yaml v1.18.0
 ## explicit; go 1.21.0
 github.com/goccy/go-yaml
 github.com/goccy/go-yaml/ast

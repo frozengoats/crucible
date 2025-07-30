@@ -27,6 +27,7 @@ type ActionContext struct {
 	Name        string
 	Description string
 	Context     json.RawMessage
+	Error       string
 }
 
 type SeqPos struct {
@@ -49,44 +50,26 @@ type Until struct {
 }
 
 type Action struct {
-	Name          string    `yaml:"name"`          // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
-	Description   string    `yaml:"description"`   // action description
-	Iterable      string    `yaml:"iterable"`      // if an iterable is provided, it will be iterated and the child action will be called for each element
-	Import        string    `yaml:"import"`        // if specified, the action/sequence is imported from a location relative to the top level config.yaml
-	When          string    `yaml:"when"`          // conditional expression which must evaluate to true, in order for the action or loop to be executed
-	FailWhen      string    `yaml:"failWhen"`      // conditional expression which when evaluating to true indicates a failure (failures are otherwise implicit to command execution return codes)
-	IgnoreFailure bool      `yaml:"ignoreFailure"` // ignores the exit code of an execution, so that it does not cause the sequence to terminate
-	Until         *Until    `yaml:"until"`         // execute action until the condition evaluates to true
-	Action        *Action   `yaml:"action"`        // action to be executed if an iterable is present as well
-	ParseJson     bool      `yaml:"parseJson"`     // processes the standard output as JSON and makes the data available on the .kv context of the action
-	ParseYaml     bool      `yaml:"parseYaml"`     // processes the standard output as YAML and makes the data available on the .kv context of the action
-	Su            string    `yaml:"su"`            // switch to the following user (can be a name or base 10 string of a numeric id)
-	Sudo          bool      `yaml:"sudo"`          // run the command as root
-	SubSequence   *Sequence `yaml:"subSequence"`   // sub sequence if imported
-	Local         bool      `yaml:"local"`         // when true, action will be executed locally instead of remotely, this is useful for preparing local assets which might need to be present locally but not remotely
+	Name           string    `yaml:"name"`           // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
+	Description    string    `yaml:"description"`    // action description
+	Iterate        string    `yaml:"iterate"`        // if an iterable is provided, it will be iterated and the child action will be called for each element
+	Import         string    `yaml:"import"`         // if specified, the action/sequence is imported from a location relative to the top level config.yaml
+	When           string    `yaml:"when"`           // conditional expression which must evaluate to true, in order for the action or loop to be executed
+	FailWhen       string    `yaml:"failWhen"`       // conditional expression which when evaluating to true indicates a failure (failures are otherwise implicit to command execution return codes)
+	IgnoreExitCode bool      `yaml:"ignoreExitCode"` // ignores the exit code of an execution, so that it does not cause the sequence to terminate
+	Until          *Until    `yaml:"until"`          // execute action until the condition evaluates to true
+	Action         *Action   `yaml:"action"`         // action to be executed if an iterable is present as well
+	ParseJson      bool      `yaml:"parseJson"`      // processes the standard output as JSON and makes the data available on the .kv context of the action
+	ParseYaml      bool      `yaml:"parseYaml"`      // processes the standard output as YAML and makes the data available on the .kv context of the action
+	Su             string    `yaml:"su"`             // switch to the following user (can be a name or base 10 string of a numeric id)
+	Sudo           bool      `yaml:"sudo"`           // run the command as root
+	SubSequence    *Sequence `yaml:"subSequence"`    // sub sequence if imported
+	Local          bool      `yaml:"local"`          // when true, action will be executed locally instead of remotely, this is useful for preparing local assets which might need to be present locally but not remotely
 
 	// these properties are independent action properties, mutually exclusive
 	Exec  []string `yaml:"exec"`  // execute a command
 	Shell string   `yaml:"shell"` // execute a command using sh
 	Sync  *Sync    `yaml:"sync"`  // sync files from local to remote
-}
-
-func (a *Action) GetExecutionString() ([]string, bool) {
-	if len(a.Exec) == 0 && len(a.Shell) == 0 {
-		return nil, false
-	}
-
-	if len(a.Exec) > 0 {
-		return a.Exec, true
-	}
-
-	var shellStr string
-	if strings.Contains(a.Shell, "\"") {
-		shellStr = fmt.Sprintf("'%s'", a.Shell)
-	} else {
-		shellStr = fmt.Sprintf("\"%s\"", a.Shell)
-	}
-	return []string{"sh", "-c", shellStr}, true
 }
 
 type Sequence struct {
@@ -100,12 +83,6 @@ func (s *Sequence) Validate() error {
 	if s.Name == "" {
 		return fmt.Errorf("sequence at %s must have the name field set", s.filename)
 	}
-
-	// for index, action := range s.Sequence {
-	// 	if action.Name == "" {
-	// 		return fmt.Errorf("action at index %d in sequence file %s must have the name field set", index, s.filename)
-	// 	}
-	// }
 
 	return nil
 }
@@ -193,7 +170,6 @@ func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClie
 		localExecutionClient: cmdsession.NewLocalExecutionClient(),
 		sequence:             s,
 		totalExecutionSteps:  s.CountExecutionSteps(),
-		varContext:           kvstore.NewStore(),
 		ExecContext:          kvstore.NewStore(),
 	}
 }
@@ -291,12 +267,13 @@ func (ei *ExecutionInstance) variableLookup(key string) (any, error) {
 	var store *kvstore.Store
 	if strings.HasPrefix(key, ".Values.") {
 		key = strings.TrimPrefix(key, ".Values.")
-		store = ei.varContext
-	} else if strings.HasPrefix(key, ".$.") {
-		key = strings.TrimPrefix(key, ".Values.")
-		store = ei.varContext
-	} else {
+		store = ei.config.ValuesStore
+	} else if strings.HasPrefix(key, ".Context.") {
 		key = strings.TrimPrefix(key, ".Context.")
+		store = ei.ExecContext
+	} else {
+		// assume immediate context if not prefixed by one of the two known namespace classifiers
+		key = fmt.Sprintf("%s%s", ImmediateKey, key)
 		store = ei.ExecContext
 	}
 
@@ -327,15 +304,15 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 		}
 	}
 
-	if action.Iterable != "" {
-		iterableResult, err := eval.Evaluate(action.Iterable, ei.variableLookup, functions.Call)
+	if action.Iterate != "" {
+		iterableResult, err := eval.Evaluate(action.Iterate, ei.variableLookup, functions.Call)
 		if err != nil {
-			return fmt.Errorf("unable to evaluate interable attribute: %s\n%w", action.Iterable, err)
+			return fmt.Errorf("unable to evaluate interable attribute: %s\n%w", action.Iterate, err)
 		}
 
 		iterableArray, ok := iterableResult.([]any)
 		if !ok {
-			return fmt.Errorf("iterable attribute does not return an array")
+			return fmt.Errorf("iterate attribute does not return an array")
 		}
 
 		for _, item := range iterableArray {
@@ -358,6 +335,11 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	for {
 		stdout, exitCode, err = ei.executeSingleAction(action)
 		if err != nil {
+			ei.ImmediateContexts = append(ei.ImmediateContexts, &ActionContext{
+				Name:        action.Name,
+				Description: action.Description,
+				Error:       err.Error(),
+			})
 			return err
 		}
 
@@ -417,8 +399,19 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	}
 
 	if exitCode != 0 {
-		if !action.IgnoreFailure {
+		if !action.IgnoreExitCode {
 			return cmdsession.NewExitCodeError(exitCode)
+		}
+	}
+
+	if action.FailWhen != "" {
+		failWhenResult, err := eval.Evaluate(action.FailWhen, ei.variableLookup, functions.Call)
+		if err != nil {
+			return err
+		}
+
+		if eval.IsTruthy(failWhenResult) {
+			return fmt.Errorf("condition of failWhen clause evaluated to true")
 		}
 	}
 
@@ -444,9 +437,44 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	return nil
 }
 
+func (ei *ExecutionInstance) GetExecutionString(action *Action) ([]string, bool, error) {
+	if len(action.Exec) == 0 && len(action.Shell) == 0 {
+		return nil, false, nil
+	}
+
+	if len(action.Exec) > 0 {
+		var renderedExec []string
+		for _, ex := range action.Exec {
+			rendEx, err := eval.Template(ex, ei.variableLookup, functions.Call)
+			if err != nil {
+				return nil, false, fmt.Errorf("unable to template action exec command portion: %w", err)
+			}
+			renderedExec = append(renderedExec, rendEx)
+		}
+
+		return renderedExec, true, nil
+	}
+
+	shellStr, err := eval.Template(action.Shell, ei.variableLookup, functions.Call)
+	if err != nil {
+		return nil, false, fmt.Errorf("unable to template action shell command: %w", err)
+	}
+
+	if strings.Contains(shellStr, "\"") {
+		shellStr = fmt.Sprintf("'%s'", shellStr)
+	} else {
+		shellStr = fmt.Sprintf("\"%s\"", shellStr)
+	}
+	return []string{"sh", "-c", shellStr}, true, nil
+}
+
 // executeSingleAction performs the action execution, returning the output, exit code, and or any error
 func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, error) {
-	execStr, ok := action.GetExecutionString()
+	execStr, ok, err := ei.GetExecutionString(action)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	if ok {
 		if action.Sudo {
 			execStr = append([]string{"sudo"}, execStr...)

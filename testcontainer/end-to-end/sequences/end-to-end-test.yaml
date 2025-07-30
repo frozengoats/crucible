@@ -34,9 +34,24 @@ sequence:
   - description: iterate the number set and make some output files
     iterate: .Values.things.numbers
     action:
-      echo {{ .Context.$.item }}
+      shell: echo {{ .item }} > ~/drop-zone/{{ .item }}.txt
 
-  - description: cause the system to break with a bad request
-    shell: ls -la ~/ddd
+  - description: list all dz contents
+    shell: ls -la ~/drop-zone/*.txt
+
+  - description: make sure one of those files exists and contains the right data
+    # this should fail on exit code if the file does not exist
+    shell: cat ~/drop-zone/3.txt
+    # if the file exists, we will hit this evaluation and fail if the data is incorrect
+    failWhen: line(.stdout) != "3"
+
+  - description: iterate the number set and make some output files
+    iterate: .Values.things.numbers
+    action:
+      shell: cat ~/drop-zone/{{ .item }}.txt
+      failWhen: line(.stdout) != to_string(.item)
+
+  # - description: cause the system to break with a bad request
+  #   shell: ls -la ~/ddd
 
 

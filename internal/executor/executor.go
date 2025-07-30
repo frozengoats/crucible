@@ -14,10 +14,11 @@ import (
 )
 
 type ResultObj struct {
-	SuccessCount int           `json:"successCount"`
-	FailCount    int           `json:"failCount"`
-	SuccessHosts []string      `json:"successHosts"`
-	FailHosts    []*FailedHost `json:"failHosts"`
+	Values       json.RawMessage `json:"values"`
+	SuccessCount int             `json:"successCount"`
+	FailCount    int             `json:"failCount"`
+	SuccessHosts []string        `json:"successHosts"`
+	FailHosts    []*FailedHost   `json:"failHosts"`
 }
 
 type FailedHost struct {
@@ -138,7 +139,8 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 							break
 						}
 
-						// execute the action here
+						// execute the action here, first clearing the immediate context from any previous run
+						e.ExecutionInstance.ExecContext.Set(map[string]any{}, sequence.ImmediateKey)
 						err := e.ExecutionInstance.Execute(action)
 						if syncExecutionSteps || err != nil {
 							if err != nil {
@@ -182,9 +184,14 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 	}
 	close(execChan)
 
+	valuesBytes, err := json.Marshal(configObj.ValuesStore.GetMapping())
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal values mapping to json: %w", err)
+	}
 	resultObj := &ResultObj{
 		SuccessHosts: []string{},
 		FailHosts:    []*FailedHost{},
+		Values:       valuesBytes,
 	}
 
 	for _, e := range executors {
