@@ -63,15 +63,16 @@ func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValu
 	if len(targets) == 1 && targets[0] == "all" {
 		targets = nil
 	}
-	return executeSequence(configPaths, valuesPaths, sequencePath, targets, debug, jsonOutput)
+	return executeSequence(cwdPath, configPaths, valuesPaths, sequencePath, targets, debug, jsonOutput)
 }
 
-func executeSequence(configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) ([]byte, error) {
+func executeSequence(cwdPath string, configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) ([]byte, error) {
 	configObj, err := config.FromFilePaths(configPaths...)
 	if err != nil {
 		return nil, err
 	}
 
+	configObj.CwdPath = cwdPath
 	configObj.Debug = debug
 	if configObj.Debug {
 		log.SetLevel(log.DEBUG)

@@ -143,7 +143,7 @@ func (g *Group) EmitTokens() ([]*Token, error) {
 			{
 				Text:   g.Text,
 				Type:   TokenTypeGroup,
-				Tokens: tokens,
+				Tokens: organizeTokens(tokens),
 			},
 		}, nil
 	}
@@ -467,21 +467,7 @@ func getGroups(expression string) ([]*Group, error) {
 	return groups, nil
 }
 
-func tokenize(expression string) (*Token, error) {
-	groups, err := getGroups(expression)
-	if err != nil {
-		return nil, err
-	}
-
-	var tokens []*Token
-	for _, g := range groups {
-		toks, err := g.EmitTokens()
-		if err != nil {
-			return nil, err
-		}
-		tokens = append(tokens, toks...)
-	}
-
+func organizeTokens(tokens []*Token) []*Token {
 	var rectifiedTokens []*Token
 	var prevToken *Token
 	for _, t := range tokens {
@@ -538,9 +524,27 @@ func tokenize(expression string) (*Token, error) {
 		orderedTokens = nil
 	}
 
+	return rectifiedTokens
+}
+
+func tokenize(expression string) (*Token, error) {
+	groups, err := getGroups(expression)
+	if err != nil {
+		return nil, err
+	}
+
+	var tokens []*Token
+	for _, g := range groups {
+		toks, err := g.EmitTokens()
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, toks...)
+	}
+
 	return &Token{
 		Type:   TokenTypeGroup,
-		Tokens: rectifiedTokens,
+		Tokens: organizeTokens(tokens),
 	}, nil
 }
 

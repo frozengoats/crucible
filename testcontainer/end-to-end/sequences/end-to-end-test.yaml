@@ -49,9 +49,47 @@ sequence:
     iterate: .Values.things.numbers
     action:
       shell: cat ~/drop-zone/{{ .item }}.txt
-      failWhen: line(.stdout) != to_string(.item)
+      failWhen: line(.stdout) != string(.item)
+
+  - description: delete iter files using exec
+    exec:
+    - rm
+    - /home/test/drop-zone/*.txt
+
+  - description: put a single .txt file back in the drop zone
+    shell: echo "hello" > ~/drop-zone/h.txt
+
+  - description: make sure no .txt files exist
+    exec:
+    - ls
+    - -la
+    - ~/drop-zone/*.txt
+    failWhen: len(lines(.stdout)) != 1
+
+  - description: sync bundle to destination
+    sync:
+      src: /home/test/bundle
+      dest: /home/test
+
+  - description: verify bundle files
+    shell: ls -la ~/bundle/inner/inner_bundle.txt && ls -la ~/bundle/bundle.txt
+
+  - description: look at the file contents
+    shell: cat /home/test/bundle/bundle.txt
+    failWhen: len(lines(.stdout)) != 2 || lines(.stdout)[0] != "this is a text bundle" || lines(.stdout)[1] != "it has 2 lines"
+
+  - description: render a kube template
+    template:
+      src: ./resources/kube-secret.yaml
+      dest: /home/test/kube-secret.yaml
+      context:
+        name: .Values.things.secret.yello
+        data: .Values.things.secret.data
+
+  - description: verify template exists on remote system
+    shell: cat /home/test/kube-secret.yaml
+    failWhen: len(lines(.stdout)) != 8
+
 
   # - description: cause the system to break with a bad request
   #   shell: ls -la ~/ddd
-
-

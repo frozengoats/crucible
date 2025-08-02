@@ -161,10 +161,10 @@ func (suite *CrucibleTestSuite) TestEndToEnd() {
 	m := map[string]any{}
 	err = json.Unmarshal(jsonResult, &m)
 	suite.NoError(err)
+	suite.Zero(m["failCount"].(float64))
 
 	suite.T().Log("logging the unmarshal result")
 	suite.T().Log(string(jsonResult))
-	suite.NoError(fmt.Errorf("error"))
 }
 
 func TestCrucible(t *testing.T) {

@@ -80,7 +80,7 @@ github.com/ebitengine/purego/internal/strings
 # github.com/felixge/httpsnoop v1.0.4
 ## explicit; go 1.13
 github.com/felixge/httpsnoop
-# github.com/frozengoats/eval v0.0.2
+# github.com/frozengoats/eval v0.0.3
 ## explicit; go 1.24.0
 github.com/frozengoats/eval
 # github.com/frozengoats/kvstore v0.1.6

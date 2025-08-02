@@ -51,6 +51,7 @@ type Config struct {
 	User        *UserConfig
 	Debug       bool
 	Json        bool
+	CwdPath     string
 }
 
 func FromFilePaths(stackPaths ...string) (*Config, error) {

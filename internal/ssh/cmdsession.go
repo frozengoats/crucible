@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"io"
 	"strings"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
@@ -12,10 +13,14 @@ type SshCmdSession struct {
 }
 
 // Execute executes a
-func (s *SshCmdSession) Execute(cmd ...string) ([]byte, error) {
+func (s *SshCmdSession) Execute(stdin io.Reader, cmd ...string) ([]byte, error) {
 	sess, err := s.client.NewSession()
 	if err != nil {
 		return nil, cmdsession.NewSessionError("unable to initiate new session: %", err.Error())
+	}
+
+	if stdin != nil {
+		sess.Stdin = stdin
 	}
 
 	output, err := sess.Output(strings.Join(cmd, " "))

@@ -1,19 +1,22 @@
 package sequence
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/frozengoats/crucible/internal/functions"
 	"github.com/frozengoats/crucible/internal/log"
+	"github.com/frozengoats/crucible/internal/ssh"
 	"github.com/frozengoats/eval"
 	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
@@ -36,8 +39,8 @@ type SeqPos struct {
 }
 
 type Sync struct {
-	Local         string `yaml:"local"`         // local resource(s) to sync to remote
-	Remote        string `yaml:"remote"`        // remote location to sync to
+	Src           string `yaml:"src"`           // local resource(s) to sync to remote
+	Dest          string `yaml:"dest"`          // remote location to sync to
 	PreserveOwner bool   `yaml:"preserveOwner"` // preserve ownership
 	PreservePerms bool   `yaml:"preservePerms"` // preserve file permissions
 	PreserveGroup bool   `yaml:"preserveGroup"` // preserve group
@@ -47,6 +50,12 @@ type Until struct {
 	PauseInterval float64 `yaml:"pauseInterval"` // interval in seconds to pause between next action execution if until condition is not met
 	MaxAttempts   int     `yaml:"maxAttempts"`   // max attempts to execute the action if the condition is not met
 	Condition     string  `yaml:"condition"`     // condition which must evaluate to true in order to stop execution
+}
+
+type Template struct {
+	Src     string            `yaml:"src"`
+	Dest    string            `yaml:"dest"`
+	Context map[string]string `yaml:"context"`
 }
 
 type Action struct {
@@ -67,9 +76,11 @@ type Action struct {
 	Local          bool      `yaml:"local"`          // when true, action will be executed locally instead of remotely, this is useful for preparing local assets which might need to be present locally but not remotely
 
 	// these properties are independent action properties, mutually exclusive
-	Exec  []string `yaml:"exec"`  // execute a command
-	Shell string   `yaml:"shell"` // execute a command using sh
-	Sync  *Sync    `yaml:"sync"`  // sync files from local to remote
+	Stdin    string    `yaml:"stdin"`    // only valid with exec/shell
+	Exec     []string  `yaml:"exec"`     // execute a command
+	Shell    string    `yaml:"shell"`    // execute a command using sh
+	Sync     *Sync     `yaml:"sync"`     // sync files from local to remote
+	Template *Template `yaml:"template"` // render a template
 }
 
 type Sequence struct {
@@ -315,8 +326,9 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 			return fmt.Errorf("iterate attribute does not return an array")
 		}
 
-		for _, item := range iterableArray {
+		for i, item := range iterableArray {
 			ei.ExecContext.Set(item, ImmediateKey, "item")
+			action.Action.Description = fmt.Sprintf("%s (iteration %d of %d)", action.Description, i+1, len(iterableArray))
 			err = ei.Execute(action.Action)
 			if err != nil {
 				return err
@@ -386,7 +398,7 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 
 		untilResult, err := eval.Evaluate(action.Until.Condition, ei.variableLookup, functions.Call)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to evaluate until condition: %w", err)
 		}
 		if eval.IsTruthy(untilResult) {
 			break
@@ -407,7 +419,7 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	if action.FailWhen != "" {
 		failWhenResult, err := eval.Evaluate(action.FailWhen, ei.variableLookup, functions.Call)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to evaluate failWhen condition %s: %w", action.FailWhen, err)
 		}
 
 		if eval.IsTruthy(failWhenResult) {
@@ -476,6 +488,22 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 	}
 
 	if ok {
+		var reader io.Reader
+		if action.Stdin != "" {
+			stdin, err := eval.Evaluate(action.Stdin, ei.variableLookup, functions.Call)
+			if err != nil {
+				return nil, 0, fmt.Errorf("unable to evaluate action stdin")
+			}
+
+			switch t := stdin.(type) {
+			case []byte:
+				reader = bytes.NewReader(t)
+			case string:
+				reader = strings.NewReader(t)
+			default:
+				return nil, 0, fmt.Errorf("action stdin must evaluate to a string or byte array (it is currently %T)", t)
+			}
+		}
 		if action.Sudo {
 			execStr = append([]string{"sudo"}, execStr...)
 		}
@@ -485,7 +513,7 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 		} else {
 			execClient = ei.executionClient
 		}
-		return executeRemoteCommand(execClient, execStr)
+		return executeRemoteCommand(execClient, reader, execStr)
 	}
 
 	// if the code gets to this point, it's a sync
@@ -493,17 +521,21 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 		return nil, 0, ei.sync(action)
 	}
 
+	if action.Template != nil {
+		return ei.template(action)
+	}
+
 	return nil, 0, fmt.Errorf("unknown action execution")
 }
 
-func executeRemoteCommand(execClient cmdsession.ExecutionClient, cmd []string) ([]byte, int, error) {
+func executeRemoteCommand(execClient cmdsession.ExecutionClient, stdin io.Reader, cmd []string) ([]byte, int, error) {
 	// create a new command session
 	sess, err := execClient.NewCmdSession()
 	if err != nil {
 		return nil, 0, err
 	}
 
-	output, err := sess.Execute(cmd...)
+	output, err := sess.Execute(stdin, cmd...)
 	if err != nil {
 		exitCode, hasExitCode := cmdsession.GetExitCode(err)
 		if !hasExitCode {
@@ -518,13 +550,41 @@ func executeRemoteCommand(execClient cmdsession.ExecutionClient, cmd []string) (
 
 func (ei *ExecutionInstance) sync(action *Action) error {
 	syncAction := action.Sync
-	cmd := exec.Command("rsync", syncAction.Local, fmt.Sprintf("%s@%s:%s", ei.config.User.Username, ei.hostConfig.Host, syncAction.Remote))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+
+	return ssh.Rsync(ei.config.Username(ei.hostIdent), ei.config.Hostname(ei.hostIdent), ei.config.Port(ei.hostIdent), ei.config.KeyPath(ei.hostIdent), syncAction.Src, syncAction.Dest)
+}
+
+// template causes the templatization of a local resource and renders it to a remote location
+func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
+	templateAction := action.Template
+
+	if !filepath.IsAbs(templateAction.Src) {
+		p, err := filepath.Abs(filepath.Join(ei.config.CwdPath, templateAction.Src))
+		if err != nil {
+			return nil, 0, fmt.Errorf("unable to transform template path %s to abs path: %w", templateAction.Src, err)
+		}
+
+		templateAction.Src = p
+	}
+	t, err := template.ParseFiles(templateAction.Src)
 	if err != nil {
-		return err
+		return nil, 0, err
 	}
 
-	return nil
+	var rendered bytes.Buffer
+	evalContext := map[string]any{}
+	for k, v := range templateAction.Context {
+		evalV, err := eval.Evaluate(v, ei.variableLookup, functions.Call)
+		if err != nil {
+			return nil, 0, fmt.Errorf("problem evaluating value \"%s\" at key \"%s\"", v, k)
+		}
+
+		evalContext[k] = evalV
+	}
+	err = t.Execute(&rendered, evalContext)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return executeRemoteCommand(ei.executionClient, &rendered, []string{"sh", "-c", fmt.Sprintf("cat > %s", templateAction.Dest)})
 }

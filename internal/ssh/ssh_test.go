@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -80,6 +81,7 @@ type SshTestSuite struct {
 	sshContainer      testcontainers.Container
 	sshAgentContainer testcontainers.Container
 	sshHost           string
+	sshPort           int
 	testDataDir       string
 }
 
@@ -126,7 +128,10 @@ func (suite *SshTestSuite) SetupTest() {
 	sshPort, err := suite.sshContainer.MappedPort(context.Background(), nat.Port(SshPort))
 	suite.NoError(err)
 
-	suite.sshHost = fmt.Sprintf("%s:%s", sshHost, sshPort.Port())
+	suite.sshHost = sshHost
+	sshP, err := strconv.ParseInt(sshPort.Port(), 10, 64)
+	suite.NoError(err)
+	suite.sshPort = int(sshP)
 
 	_ = os.RemoveAll(AgentUnixSocketDir)
 	err = os.MkdirAll(AgentUnixSocketDir, 0777)
@@ -196,7 +201,7 @@ func (suite *SshTestSuite) TestUnknownHostAllow() {
 	privKey := filepath.Join(suite.testDataDir, "id_ed25519")
 
 	// allow the unknown host to be connected to
-	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
+	sshSession := NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
 
 	err := sshSession.Connect()
@@ -207,13 +212,13 @@ func (suite *SshTestSuite) TestKnownHostNoProblem() {
 	privKey := filepath.Join(suite.testDataDir, "id_ed25519")
 
 	// allow the unknown host to be connected to, so that we can cache it in our known_hosts
-	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
+	sshSession := NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
 	err := sshSession.Connect()
 	suite.NoError(err)
 
 	// this time, fail if a host is unknown.  it should already be part of our known_hosts though, so it should pass
-	sshSession = NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithPassphraseProviderOption(NewTypedPassphraseProvider()))
+	sshSession = NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
 	err = sshSession.Connect()
 	suite.NoError(err)
@@ -223,20 +228,20 @@ func (suite *SshTestSuite) TestKeyWithPassphrase() {
 	privKey := filepath.Join(suite.testDataDir, "id_ed25519_passphrase")
 
 	// block entry with bad passphrase on locked private key
-	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("badphrase")))
+	sshSession := NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("badphrase")))
 	defer sshSession.Close()
 
 	err := sshSession.Connect()
 	suite.Error(err)
 
 	// admit entry once by providing the passphrase when prompted with the correct passphrase
-	sshSession = NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider(TestPassphrase)))
+	sshSession = NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider(TestPassphrase)))
 	defer sshSession.Close()
 	err = sshSession.Connect()
 	suite.NoError(err)
 
 	// admit entry even with empty phrase, because agent should now hold the unlocked key
-	sshSession = NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("")))
+	sshSession = NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("")))
 	defer sshSession.Close()
 	err = sshSession.Connect()
 	suite.NoError(err)
@@ -247,7 +252,7 @@ func (suite *SshTestSuite) TestRsyncNoPassphrase() {
 	privKey := filepath.Join(suite.testDataDir, "id_ed25519")
 
 	// allow the unknown host to be connected to
-	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
+	sshSession := NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
 	defer sshSession.Close()
 
 	err := sshSession.Connect()
@@ -258,7 +263,7 @@ func (suite *SshTestSuite) TestRsyncNoPassphrase() {
 	err = prepTestEnvironment()
 	suite.NoError(err)
 
-	err = Rsync("test", suite.sshHost, privKey, "/tmp/rsync_test", "/tmp/target", "-o", fmt.Sprintf("UserKnownHostsFile=%s", KnownHostsFile))
+	err = Rsync("test", suite.sshHost, suite.sshPort, privKey, "/tmp/rsync_test", "/tmp/target", "-o", fmt.Sprintf("UserKnownHostsFile=%s", KnownHostsFile))
 	suite.NoError(err)
 }
 

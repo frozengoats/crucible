@@ -12,6 +12,7 @@ RUN addgroup -S test --gid ${GID} && \
 
 COPY id_ed2551* /home/test/.ssh/
 COPY end-to-end /home/test/end-to-end
+COPY bundle /home/test/bundle
 RUN touch /home/test/.ssh/known_hosts && chmod 600 /home/test/.ssh/known_hosts
 RUN chown -R test:test /home/test
 

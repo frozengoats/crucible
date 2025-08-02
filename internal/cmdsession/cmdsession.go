@@ -3,6 +3,7 @@ package cmdsession
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 )
 
@@ -15,7 +16,7 @@ type ExecutionClient interface {
 type DummyCmdSession struct {
 }
 
-func (cs *DummyCmdSession) Execute(cmd ...string) ([]byte, error) {
+func (cs *DummyCmdSession) Execute(stdin io.Reader, cmd ...string) ([]byte, error) {
 	return nil, nil
 }
 
@@ -69,7 +70,7 @@ func (se *SessionError) Error() string {
 }
 
 type CmdSession interface {
-	Execute(cmd ...string) ([]byte, error)
+	Execute(stdin io.Reader, cmd ...string) ([]byte, error)
 }
 
 func IsSessionError(err error) bool {
@@ -108,8 +109,11 @@ func (c *LocalExecutionClient) NewCmdSession() (CmdSession, error) {
 type LocalCmdSession struct {
 }
 
-func (c *LocalCmdSession) Execute(cmd ...string) ([]byte, error) {
+func (c *LocalCmdSession) Execute(stdin io.Reader, cmd ...string) ([]byte, error) {
 	com := exec.Command(cmd[0], cmd[1:]...)
+	if stdin != nil {
+		com.Stdin = stdin
+	}
 	outBytes, err := com.Output()
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
