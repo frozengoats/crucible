@@ -63,7 +63,7 @@ s := kvstore.GetStore("x", "y", "z")
 s := kvstore.GetStoreArray("x", "y", "z")
 ```
 
-Lookup by key as well as accessing arrays by index
+Lookup by key as well as accessing arrays (as well as strings) by index
 
 ```
 // a data structure containing an array can be accessed by index

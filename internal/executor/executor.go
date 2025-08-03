@@ -77,7 +77,7 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		)
 	}
 
-	s, err := sequence.LoadSequence(sequencePath)
+	s, err := sequence.LoadSequence(cfg.CwdPath, sequencePath)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,13 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 					// is incremented for every executor being enqueued (once per action in the case of sync)
 					defer execWaitGroup.Done()
 					for {
-						action := e.ExecutionInstance.Next()
+						action, err := e.ExecutionInstance.Next()
+						if err != nil {
+							e.ExecutionInstance.SetError(err)
+							log.Error([]any{"host", e.HostIdent}, "execution terminated due to error: %s", err.Error())
+							break
+						}
+
 						if action == nil {
 							// no more actions, process the next thing
 							break
@@ -141,7 +147,7 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 
 						// execute the action here, first clearing the immediate context from any previous run
 						e.ExecutionInstance.ExecContext.Set(map[string]any{}, sequence.ImmediateKey)
-						err := e.ExecutionInstance.Execute(action)
+						err = e.ExecutionInstance.Execute(action)
 						if syncExecutionSteps || err != nil {
 							if err != nil {
 								e.ExecutionInstance.SetError(err)

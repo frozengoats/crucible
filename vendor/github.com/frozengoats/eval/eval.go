@@ -5,13 +5,15 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/frozengoats/kvstore"
 )
 
 type VariableLookup func(key string) (any, error)
 type FunctionCall func(name string, args ...any) (any, error)
 
+var subscriptParser = regexp.MustCompile(`^((\[\d+\])|(\.[a-zA-Z_][a-zA-Z_0-9]+))+$`)
 var variableFinder = regexp.MustCompile(`^\.[a-zA-Z_]`)
-var templateFinder = regexp.MustCompile(`{{\s+.*?\s+}}`)
 
 const (
 	OperatorEquals        string = "=="
@@ -92,7 +94,7 @@ type Group struct {
 	Type GroupType
 }
 
-func CastToNumberIfApplicable(value any) any {
+func CastToFloat64IfApplicable(value any) any {
 	switch t := value.(type) {
 	case int:
 		return float64(t)
@@ -238,9 +240,10 @@ const (
 )
 
 type Token struct {
-	Text   string
-	Type   TokenType
-	Tokens []*Token
+	Text      string
+	Type      TokenType
+	Tokens    []*Token
+	Subscript string
 }
 
 // simplify traverses the token in a depth-first order and evaluates the result
@@ -268,90 +271,106 @@ func (t *Token) evaluate(varLookup VariableLookup, funcCall FunctionCall) (any, 
 		if err != nil {
 			return nil, err
 		}
-		return CastToNumberIfApplicable(v), nil
+
+		curVal = v
 	case TokenTypeInferredString:
-		return t.Text, nil
+		curVal = t.Text
 	case TokenTypeBoolean:
 		if t.Text == "true" {
-			return true, nil
+			curVal = true
+		} else {
+			curVal = false
 		}
-		return false, nil
 	case TokenTypeString:
-		return t.Text, nil
+		curVal = t.Text
 	case TokenTypeNumber:
 		fl, _ := strconv.ParseFloat(t.Text, 64)
-		return fl, nil
+		curVal = fl
 	case TokenTypeVariable:
 		varValue, err := varLookup(t.Text)
 		if err != nil {
 			return nil, err
 		}
-		return CastToNumberIfApplicable(varValue), nil
+		curVal = varValue
+	default:
+		if t.Type != TokenTypeGroup {
+			panic("this should be a group token type and no other")
+		}
+
+		for _, token := range t.Tokens {
+			var value any
+			if prevToken.Type == TokenTypeOperator && token.Type == TokenTypeOperator {
+				return nil, fmt.Errorf("bad expression, multiple adjacent operators")
+			}
+
+			if token.Type == TokenTypeOperator {
+				prevToken = token
+				continue
+			}
+
+			v, e := token.evaluate(varLookup, funcCall)
+			if e != nil {
+				return nil, e
+			}
+			value = v
+
+			if curVal == nil {
+				curVal = value
+				prevToken = token
+				continue
+			}
+
+			if prevToken.Type != TokenTypeOperator {
+				return nil, fmt.Errorf("bad expression, values must be separated by operators")
+			}
+
+			var err error
+			switch prevToken.Text {
+			case OperatorEquals:
+				curVal, err = EqualsOp(curVal, value)
+			case OperatorUnequals:
+				curVal, err = UnequalsOp(curVal, value)
+			case OperatorGreater:
+				curVal, err = GreaterThanOp(curVal, value)
+			case OperatorGreaterEquals:
+				curVal, err = GreaterThanEqualsOp(curVal, value)
+			case OperatorLess:
+				curVal, err = LessThanOp(curVal, value)
+			case OperatorLessEquals:
+				curVal, err = LessThanEqualsOp(curVal, value)
+			case OperatorAnd:
+				curVal, err = AndOp(curVal, value)
+			case OperatorOr:
+				curVal, err = OrOp(curVal, value)
+			case OperatorPlus:
+				curVal, err = PlusOp(curVal, value)
+			case OperatorMinus:
+				curVal, err = MinusOp(curVal, value)
+			case OperatorMultiply:
+				curVal, err = MultiplyOp(curVal, value)
+			case OperatorExponent:
+				curVal, err = ExponentOp(curVal, value)
+			case OperatorDivide:
+				curVal, err = DivideOp(curVal, value)
+			default:
+				return nil, fmt.Errorf("unknown operator %s", prevToken.Text)
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			prevToken = token
+		}
 	}
 
-	for _, token := range t.Tokens {
-		var value any
-		if prevToken.Type == TokenTypeOperator && token.Type == TokenTypeOperator {
-			return nil, fmt.Errorf("bad expression, multiple adjacent operators")
-		}
+	curVal = CastToFloat64IfApplicable(curVal)
 
-		if token.Type == TokenTypeOperator {
-			prevToken = token
-			continue
-		}
-
-		v, e := token.evaluate(varLookup, funcCall)
-		if e != nil {
-			return nil, e
-		}
-		value = v
-
-		if curVal == nil {
-			curVal = value
-			prevToken = token
-			continue
-		}
-
-		if prevToken.Type != TokenTypeOperator {
-			return nil, fmt.Errorf("bad expression, values must be separated by operators")
-		}
-
-		var err error
-		switch prevToken.Text {
-		case OperatorEquals:
-			curVal, err = EqualsOp(curVal, value)
-		case OperatorUnequals:
-			curVal, err = UnequalsOp(curVal, value)
-		case OperatorGreater:
-			curVal, err = GreaterThanOp(curVal, value)
-		case OperatorGreaterEquals:
-			curVal, err = GreaterThanEqualsOp(curVal, value)
-		case OperatorLess:
-			curVal, err = LessThanOp(curVal, value)
-		case OperatorLessEquals:
-			curVal, err = LessThanEqualsOp(curVal, value)
-		case OperatorAnd:
-			curVal, err = AndOp(curVal, value)
-		case OperatorOr:
-			curVal, err = OrOp(curVal, value)
-		case OperatorPlus:
-			curVal, err = PlusOp(curVal, value)
-		case OperatorMinus:
-			curVal, err = MinusOp(curVal, value)
-		case OperatorMultiply:
-			curVal, err = MultiplyOp(curVal, value)
-		case OperatorExponent:
-			curVal, err = ExponentOp(curVal, value)
-		case OperatorDivide:
-			curVal, err = DivideOp(curVal, value)
-		default:
-			return nil, fmt.Errorf("unknown operator %s", prevToken.Text)
-		}
+	var err error
+	if t.Subscript != "" {
+		curVal, err = subscriptImmediate(curVal, t.Subscript)
 		if err != nil {
 			return nil, err
 		}
-
-		prevToken = token
 	}
 
 	return curVal, nil
@@ -493,13 +512,19 @@ func organizeTokens(tokens []*Token) []*Token {
 			continue
 		}
 
+		// append anything that looks like subscripting to the previous token, so long as it's not an operator or separator
+		if prevToken != nil && prevToken.Type != TokenTypeOperator && prevToken.Type != TokenTypeSeparator && t.Type == TokenTypeInferredString && subscriptParser.MatchString(t.Text) {
+			prevToken.Subscript = t.Text
+			continue
+		}
+
 		rectifiedTokens = append(rectifiedTokens, t)
 		prevToken = t
 	}
 
 	var orderedTokens []*Token
 	for _, oper := range []string{
-		OperatorExponent, OperatorDivide, OperatorMultiply,
+		OperatorExponent, OperatorDivide, OperatorMultiply, OperatorPlus, OperatorMinus, OperatorEquals, OperatorUnequals, OperatorGreater, OperatorGreaterEquals, OperatorLess, OperatorLessEquals,
 	} {
 		i := 0
 		for i < len(rectifiedTokens) {
@@ -546,6 +571,116 @@ func tokenize(expression string) (*Token, error) {
 		Type:   TokenTypeGroup,
 		Tokens: organizeTokens(tokens),
 	}, nil
+}
+
+func trueIndex(length int, index int) (int, error) {
+	if index < 0 {
+		index = length + index
+	}
+
+	if index >= length || index < 0 {
+		return 0, fmt.Errorf("index out of bounds")
+	}
+
+	return index, nil
+}
+
+func subscriptImmediate(value any, subscript string) (any, error) {
+	nsArray := kvstore.ParseNamespaceString(subscript)
+
+	var root = value
+	for _, ns := range nsArray {
+		switch t := root.(type) {
+		case map[string]any:
+			switch kt := ns.(type) {
+			case string:
+				root = t[kt]
+			default:
+				return nil, fmt.Errorf("map type must be subscripted by string keys")
+			}
+		case []any:
+			switch kt := ns.(type) {
+			case int:
+				ti, err := trueIndex(len(t), kt)
+				if err != nil {
+					return nil, err
+				}
+				root = t[ti]
+			default:
+				return nil, fmt.Errorf("array type must be subscripted by integer keys")
+			}
+		case []int:
+			switch kt := ns.(type) {
+			case int:
+				ti, err := trueIndex(len(t), kt)
+				if err != nil {
+					return nil, err
+				}
+				root = t[ti]
+			default:
+				return nil, fmt.Errorf("array type must be subscripted by integer keys")
+			}
+		case []float64:
+			switch kt := ns.(type) {
+			case int:
+				ti, err := trueIndex(len(t), kt)
+				if err != nil {
+					return nil, err
+				}
+				root = t[ti]
+			default:
+				return nil, fmt.Errorf("array type must be subscripted by integer keys")
+			}
+		case []int64:
+			switch kt := ns.(type) {
+			case int:
+				ti, err := trueIndex(len(t), kt)
+				if err != nil {
+					return nil, err
+				}
+				root = t[ti]
+			default:
+				return nil, fmt.Errorf("array type must be subscripted by integer keys")
+			}
+		case []string:
+			switch kt := ns.(type) {
+			case int:
+				ti, err := trueIndex(len(t), kt)
+				if err != nil {
+					return nil, err
+				}
+				root = t[ti]
+			default:
+				return nil, fmt.Errorf("array type must be subscripted by integer keys")
+			}
+		case []byte:
+			switch kt := ns.(type) {
+			case int:
+				ti, err := trueIndex(len(t), kt)
+				if err != nil {
+					return nil, err
+				}
+				root = t[ti]
+			default:
+				return nil, fmt.Errorf("array type must be subscripted by integer keys")
+			}
+		case string:
+			switch kt := ns.(type) {
+			case int:
+				ti, err := trueIndex(len(t), kt)
+				if err != nil {
+					return nil, err
+				}
+				root = t[ti]
+			default:
+				return nil, fmt.Errorf("array type must be subscripted by integer keys")
+			}
+		default:
+			return nil, fmt.Errorf("unsubscriptable data type %T", t)
+		}
+	}
+
+	return root, nil
 }
 
 // Evaluate evaluates an expression to either true or false, or returns an error if the expression cannot
@@ -618,34 +753,4 @@ func AsMapping(value any) map[string]any {
 	default:
 		return nil
 	}
-}
-
-func Template(template string, varLookup VariableLookup, funcCall FunctionCall) (string, error) {
-	matches := templateFinder.FindAllStringSubmatchIndex(template, -1)
-	var newParts []string
-	lastEnd := 0
-	for _, match := range matches {
-		start := match[0]
-		end := match[1]
-
-		if lastEnd < start {
-			newParts = append(newParts, template[lastEnd:start])
-		}
-
-		result, err := Evaluate(template[start+2:end-2], varLookup, funcCall)
-		if err != nil {
-			return "", err
-		}
-
-		lastEnd = end
-		if result == nil {
-			result = ""
-		}
-		newParts = append(newParts, fmt.Sprintf("%v", result))
-	}
-	if lastEnd < len(template) {
-		newParts = append(newParts, template[lastEnd:])
-	}
-	finalString := strings.Join(newParts, "")
-	return finalString, nil
 }

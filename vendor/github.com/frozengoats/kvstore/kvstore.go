@@ -2,26 +2,8 @@ package kvstore
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
-	"strings"
 )
-
-var indexIdentifier = regexp.MustCompile(`([^[]+)\[(-?\d+)\]`)
-
-func parseArrayKey(test string) (string, int, bool) {
-	match := indexIdentifier.FindAllStringSubmatch(test, -1)
-	if len(match) == 0 {
-		return "", 0, false
-	}
-
-	index, err := strconv.ParseInt(match[0][2], 10, 64)
-	if err != nil {
-		return "", 0, false
-	}
-
-	return match[0][1], int(index), true
-}
 
 func reCastStringArray(value []string) []any {
 	newArr := make([]any, len(value))
@@ -186,6 +168,13 @@ func FromMapping(mapping map[string]any) (*Store, error) {
 		return nil, err
 	}
 
+	return FromUnsafeMapping(mapping)
+}
+
+// FromUnsafeMapping returns a new store object from a standard mapping without performing any verification.
+// This is done purely for performance reasons, where the full nature of an input mapping is understood
+// and conforms to what kvstore is expecting.
+func FromUnsafeMapping(mapping map[string]any) (*Store, error) {
 	return &Store{
 		data: mapping,
 	}, nil
@@ -214,21 +203,45 @@ func (s *Store) get(namespace ...any) (any, bool) {
 				return nil, false
 			}
 		case int:
-			rootSlice, ok := root.([]any)
-			if !ok {
-				return nil, false
-			}
-			if nsTyped >= len(rootSlice) {
-				return nil, false
+			switch t := root.(type) {
+			case []any:
+				if nsTyped >= len(t) {
+					return nil, false
+				}
+
+				if nsTyped < 0-len(t) {
+					return nil, false
+				}
+				if nsTyped < 0 {
+					nsTyped = len(t) + nsTyped
+				}
+				root = t[nsTyped]
+			case string:
+				if nsTyped >= len(t) {
+					return nil, false
+				}
+
+				if nsTyped < 0-len(t) {
+					return nil, false
+				}
+				if nsTyped < 0 {
+					nsTyped = len(t) + nsTyped
+				}
+				return string([]byte{t[nsTyped]}), true
+			case []byte:
+				if nsTyped >= len(t) {
+					return nil, false
+				}
+
+				if nsTyped < 0-len(t) {
+					return nil, false
+				}
+				if nsTyped < 0 {
+					nsTyped = len(t) + nsTyped
+				}
+				return t[nsTyped], true
 			}
 
-			if nsTyped < 0-len(rootSlice) {
-				return nil, false
-			}
-			if nsTyped < 0 {
-				nsTyped = len(rootSlice) + nsTyped
-			}
-			root = rootSlice[nsTyped]
 		default:
 			return nil, false
 		}
@@ -629,18 +642,54 @@ func (s *Store) DeepCopy() *Store {
 	return newStore
 }
 
-// ParseKey returns a namespace array from a namespace string
+// ParseNamespaceString returns a namespace array from a namespace string
 func ParseNamespaceString(key string) []any {
 	var keys []any
-	keyParts := strings.Split(key, ".")
-	for _, kp := range keyParts {
-		key, index, ok := parseArrayKey(kp)
-		if !ok {
-			keys = append(keys, kp)
-		} else {
-			keys = append(keys, key)
-			keys = append(keys, index)
+	inIndex := -1
+	inKey := -1
+	for i := range key {
+		char := string(key[i])
+		if inIndex != -1 {
+			if char != "]" {
+				continue
+			}
+
+			intStr := key[inIndex+1 : i]
+			v, err := strconv.ParseInt(intStr, 10, 64)
+			if err != nil {
+				// treat it as a string
+				keys = append(keys, key[inIndex:i+1])
+			} else {
+				// treat it as an integer
+				keys = append(keys, int(v))
+			}
+			inIndex = -1
+			continue
 		}
+
+		if inKey != -1 && (char == "[" || char == ".") {
+			// deal with the key
+			keys = append(keys, key[inKey:i])
+			inKey = -1
+		}
+
+		if char == "[" {
+			inIndex = i
+			continue
+		}
+
+		if char == "." {
+			inKey = i + 1
+			continue
+		}
+
+		if inKey == -1 {
+			inKey = 0
+		}
+	}
+
+	if inKey != -1 {
+		keys = append(keys, key[inKey:])
 	}
 
 	return keys

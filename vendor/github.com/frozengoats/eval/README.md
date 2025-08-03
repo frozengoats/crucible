@@ -114,16 +114,18 @@ fLookup := func(name string, args ...any) (any, error) {
 }
 ```
 
-## template support
-`eval` support basic template rendering, using `{{ <expression> }}` as the marker for a templated portion of a string.  the template syntax is stric in its requirement for two curly braces (opening on the opening side, and closing on the completion side), plus the presence of at least one whitespace character on either side of the template to be evaluated.  the following would be invalid syntax `{{<expression>}}` or `{{<expression> }}`, however the following would be valid (the excess whitespace would simply be ignored).
+## subscripting of intermediate values
+not only variables support subscripting.  any intermediate value generated in the expression can also be subscripted.  the supported subscripting format is as follows:
 ```
-the thing is {{     .variable[0] + 2     }} meters long
+// array indexes
+x := eval.Evaluate("myfunc('abc')[-1]")
+
+// mapping access
+x := eval.Evaluate("myfunc('abc').def.ghi")
+
+// mixed access
+x := eval.Evaluate("myfunc('abc').def[0].ghi[3]")
 ```
-that would render to the following (assuming that `.variable[0]` contained the number `5`):
-```
-the thing is 7 meters long
-```
-templates which evaluate to `nil` will be rendered as zero length strings
 
 ## helpers
 `eval` comes with a few utility functions to aid in processing of evaluated results

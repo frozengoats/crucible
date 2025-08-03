@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"text/template"
@@ -16,11 +17,14 @@ import (
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/frozengoats/crucible/internal/functions"
 	"github.com/frozengoats/crucible/internal/log"
+	"github.com/frozengoats/crucible/internal/render"
 	"github.com/frozengoats/crucible/internal/ssh"
 	"github.com/frozengoats/eval"
 	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
 )
+
+var nameValidator = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 const ImmediateKey string = "__immediate"
 
@@ -34,6 +38,7 @@ type ActionContext struct {
 }
 
 type SeqPos struct {
+	Context  *kvstore.Store
 	Sequence *Sequence
 	Position int
 }
@@ -58,11 +63,16 @@ type Template struct {
 	Context map[string]string `yaml:"context"`
 }
 
+type Import struct {
+	Path    string            `yaml:"path"`
+	Context map[string]string `yaml:"context"`
+}
+
 type Action struct {
 	Name           string    `yaml:"name"`           // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
 	Description    string    `yaml:"description"`    // action description
 	Iterate        string    `yaml:"iterate"`        // if an iterable is provided, it will be iterated and the child action will be called for each element
-	Import         string    `yaml:"import"`         // if specified, the action/sequence is imported from a location relative to the top level config.yaml
+	Import         *Import   `yaml:"import"`         // if specified, a sequence is imported from a location relative to the top level config.yaml
 	When           string    `yaml:"when"`           // conditional expression which must evaluate to true, in order for the action or loop to be executed
 	FailWhen       string    `yaml:"failWhen"`       // conditional expression which when evaluating to true indicates a failure (failures are otherwise implicit to command execution return codes)
 	IgnoreExitCode bool      `yaml:"ignoreExitCode"` // ignores the exit code of an execution, so that it does not cause the sequence to terminate
@@ -91,10 +101,6 @@ type Sequence struct {
 }
 
 func (s *Sequence) Validate() error {
-	if s.Name == "" {
-		return fmt.Errorf("sequence at %s must have the name field set", s.filename)
-	}
-
 	return nil
 }
 
@@ -111,7 +117,7 @@ func (s *Sequence) CountExecutionSteps() int {
 	return steps
 }
 
-func LoadSequence(filename string) (*Sequence, error) {
+func LoadSequence(cwdPath string, filename string) (*Sequence, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read sequence file %s\n%w", filename, err)
@@ -127,26 +133,24 @@ func LoadSequence(filename string) (*Sequence, error) {
 		return nil, err
 	}
 
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("unable to obtain the current working directory\n%w", err)
-	}
-
-	for _, s := range s.Sequence {
-		if s.Import != "" {
-			importPath, err := filepath.Abs(filepath.Join(cwd, s.Import))
+	// iterate the actions in the sequence
+	for _, a := range s.Sequence {
+		if a.Import != nil {
+			importPath, err := filepath.Abs(filepath.Join(cwdPath, a.Import.Path))
 			if err != nil {
-				return nil, fmt.Errorf("unable to resolve import path for %s\n%w", s.Import, err)
+				return nil, fmt.Errorf("unable to resolve import path for %s\n%w", a.Import, err)
 			}
 
-			s.SubSequence, err = LoadSequence(importPath)
+			a.SubSequence, err = LoadSequence(cwdPath, importPath)
 			if err != nil {
 				return nil, fmt.Errorf("unable to load sub sequence at %s\n%w", importPath, err)
 			}
-			s.SubSequence.filename = importPath
-			if err := s.SubSequence.Validate(); err != nil {
+			a.SubSequence.filename = importPath
+			if err := a.SubSequence.Validate(); err != nil {
 				return nil, err
 			}
+
+			a.SubSequence.Name = a.Name
 		}
 	}
 
@@ -181,7 +185,6 @@ func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClie
 		localExecutionClient: cmdsession.NewLocalExecutionClient(),
 		sequence:             s,
 		totalExecutionSteps:  s.CountExecutionSteps(),
-		ExecContext:          kvstore.NewStore(),
 	}
 }
 
@@ -217,12 +220,12 @@ func (ei *ExecutionInstance) GetError() error {
 }
 
 // Next returns the next unexecuted action in the sequence, or nil if none remain
-func (ei *ExecutionInstance) Next() *Action {
+func (ei *ExecutionInstance) Next() (*Action, error) {
 	ei.lock.Lock()
 	defer ei.lock.Unlock()
 
 	if ei.err != nil {
-		return nil
+		return nil, nil
 	}
 
 	var stackIndex int
@@ -233,6 +236,7 @@ func (ei *ExecutionInstance) Next() *Action {
 		started = true
 		ei.executionStack = []SeqPos{
 			{
+				Context:  kvstore.NewStore(),
 				Sequence: ei.sequence,
 				Position: 0,
 			},
@@ -241,7 +245,7 @@ func (ei *ExecutionInstance) Next() *Action {
 
 	for {
 		if len(ei.executionStack) == 0 {
-			return nil
+			return nil, nil
 		}
 
 		stackIndex = len(ei.executionStack) - 1
@@ -253,8 +257,13 @@ func (ei *ExecutionInstance) Next() *Action {
 
 		if stackItem.Position >= len(stackItem.Sequence.Sequence) {
 			// pop this item off the stack and move onto the next
+			// when the stack is collapsed, the last context is written to the parent context, under
+			// the key representing the name of the collapsed sequence
 			if len(ei.executionStack) > 1 {
+				lastExecutionItem := ei.executionStack[len(ei.executionStack)-1]
 				ei.executionStack = ei.executionStack[:len(ei.executionStack)-1]
+				currentExecutionItem := ei.executionStack[len(ei.executionStack)-1]
+				currentExecutionItem.Context.Set(lastExecutionItem.Context.GetMapping(), currentExecutionItem.Sequence.Name)
 			} else {
 				ei.executionStack = []SeqPos{}
 			}
@@ -262,11 +271,34 @@ func (ei *ExecutionInstance) Next() *Action {
 			action := stackItem.Sequence.Sequence[stackItem.Position]
 			if action.SubSequence == nil {
 				ei.currentExecutionStep++
-				return action
+				ei.ExecContext = ei.executionStack[len(ei.executionStack)-1].Context
+				return action, nil
 			}
 
-			// push the next subsequence onto the stack
+			// push the next subsequence onto the stack, seed any context with the context from the import step
+			var err error
+			var newContext *kvstore.Store
+			if action.Import != nil && action.Import.Context != nil {
+				evalContext := map[string]any{}
+				for k, v := range action.Import.Context {
+					evalV, err := render.Render(v, ei.variableLookup, functions.Call)
+					if err != nil {
+						return nil, fmt.Errorf("problem evaluating sequence context value \"%s\" at key \"%s\": %w", v, k, err)
+					}
+
+					evalContext[k] = evalV
+				}
+
+				newContext, err = kvstore.FromMapping(evalContext)
+				if err != nil {
+					return nil, fmt.Errorf("unable to construct sequence context: %w", err)
+				}
+			} else {
+				newContext = kvstore.NewStore()
+			}
+
 			ei.executionStack = append(ei.executionStack, SeqPos{
+				Context:  newContext,
 				Sequence: action.SubSequence,
 				Position: -1,
 			})
@@ -429,17 +461,7 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 
 	// at this point it is safe to propagate all transient data to the context, if context names exist
 	if action.Name != "" {
-		parentNamespace := ei.GetCurrentNamespace()
-		var actionFqNamespace []any
-		actionFqNamespace = append(actionFqNamespace, parentNamespace...)
-		actionFqNamespace = append(actionFqNamespace, action.Name)
 		actionLocalNamespace := action.Name
-
-		err = ei.ExecContext.Set(ei.ExecContext.GetMapping(ImmediateKey), actionFqNamespace...)
-		if err != nil {
-			return fmt.Errorf("unable to set fully qualified context data on store: %w", err)
-		}
-
 		err = ei.ExecContext.Set(ei.ExecContext.GetMapping(ImmediateKey), actionLocalNamespace)
 		if err != nil {
 			return fmt.Errorf("unable to set fully local context data on store: %w", err)
@@ -457,20 +479,22 @@ func (ei *ExecutionInstance) GetExecutionString(action *Action) ([]string, bool,
 	if len(action.Exec) > 0 {
 		var renderedExec []string
 		for _, ex := range action.Exec {
-			rendEx, err := eval.Template(ex, ei.variableLookup, functions.Call)
+			rendEx, err := render.Render(ex, ei.variableLookup, functions.Call)
 			if err != nil {
 				return nil, false, fmt.Errorf("unable to template action exec command portion: %w", err)
 			}
-			renderedExec = append(renderedExec, rendEx)
+			renderedExec = append(renderedExec, render.ToString(rendEx))
 		}
 
 		return renderedExec, true, nil
 	}
 
-	shellStr, err := eval.Template(action.Shell, ei.variableLookup, functions.Call)
+	shellExp, err := render.Render(action.Shell, ei.variableLookup, functions.Call)
 	if err != nil {
 		return nil, false, fmt.Errorf("unable to template action shell command: %w", err)
 	}
+
+	shellStr := render.ToString(shellExp)
 
 	if strings.Contains(shellStr, "\"") {
 		shellStr = fmt.Sprintf("'%s'", shellStr)
@@ -556,17 +580,32 @@ func (ei *ExecutionInstance) sync(action *Action) error {
 
 // template causes the templatization of a local resource and renders it to a remote location
 func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
+	var err error
 	templateAction := action.Template
 
-	if !filepath.IsAbs(templateAction.Src) {
-		p, err := filepath.Abs(filepath.Join(ei.config.CwdPath, templateAction.Src))
+	src := templateAction.Src
+	srcAny, err := render.Render(src, ei.variableLookup, functions.Call)
+	if err != nil {
+		return nil, 0, fmt.Errorf("unable to evaluate template src: %w", err)
+	}
+	src = render.ToString(srcAny)
+
+	dest := templateAction.Dest
+	destAny, err := render.Render(dest, ei.variableLookup, functions.Call)
+	if err != nil {
+		return nil, 0, fmt.Errorf("unable to evaluate template dest: %w", err)
+	}
+	dest = render.ToString(destAny)
+
+	if !filepath.IsAbs(src) {
+		p, err := filepath.Abs(filepath.Join(ei.config.CwdPath, src))
 		if err != nil {
-			return nil, 0, fmt.Errorf("unable to transform template path %s to abs path: %w", templateAction.Src, err)
+			return nil, 0, fmt.Errorf("unable to transform template path %s to abs path: %w", src, err)
 		}
 
-		templateAction.Src = p
+		src = p
 	}
-	t, err := template.ParseFiles(templateAction.Src)
+	t, err := template.ParseFiles(src)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -574,7 +613,7 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 	var rendered bytes.Buffer
 	evalContext := map[string]any{}
 	for k, v := range templateAction.Context {
-		evalV, err := eval.Evaluate(v, ei.variableLookup, functions.Call)
+		evalV, err := render.Render(v, ei.variableLookup, functions.Call)
 		if err != nil {
 			return nil, 0, fmt.Errorf("problem evaluating value \"%s\" at key \"%s\"", v, k)
 		}
@@ -586,5 +625,5 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 		return nil, 0, err
 	}
 
-	return executeRemoteCommand(ei.executionClient, &rendered, []string{"sh", "-c", fmt.Sprintf("cat > %s", templateAction.Dest)})
+	return executeRemoteCommand(ei.executionClient, &rendered, []string{"sh", "-c", fmt.Sprintf("cat > %s", dest)})
 }

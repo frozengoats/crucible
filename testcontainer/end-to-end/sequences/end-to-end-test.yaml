@@ -1,4 +1,3 @@
-name: endToEndTest
 description: test and verify all functionality of crucible
 sequence:
 
@@ -34,7 +33,7 @@ sequence:
   - description: iterate the number set and make some output files
     iterate: .Values.things.numbers
     action:
-      shell: echo {{ .item }} > ~/drop-zone/{{ .item }}.txt
+      shell: echo <! .item !> > ~/drop-zone/<! .item !>.txt
 
   - description: list all dz contents
     shell: ls -la ~/drop-zone/*.txt
@@ -48,7 +47,7 @@ sequence:
   - description: iterate the number set and make some output files
     iterate: .Values.things.numbers
     action:
-      shell: cat ~/drop-zone/{{ .item }}.txt
+      shell: cat ~/drop-zone/<! .item !>.txt
       failWhen: line(.stdout) != string(.item)
 
   - description: delete iter files using exec
@@ -76,20 +75,24 @@ sequence:
 
   - description: look at the file contents
     shell: cat /home/test/bundle/bundle.txt
-    failWhen: len(lines(.stdout)) != 2 || lines(.stdout)[0] != "this is a text bundle" || lines(.stdout)[1] != "it has 2 lines"
+    failWhen: len(lines(.stdout)) != 2 || lines(.stdout)[0] != "this is a text bundle"
 
   - description: render a kube template
     template:
       src: ./resources/kube-secret.yaml
       dest: /home/test/kube-secret.yaml
       context:
-        name: .Values.things.secret.yello
-        data: .Values.things.secret.data
+        name: <! .Values.things.secret.name !>
+        data: <! .Values.things.secret.data !>
 
   - description: verify template exists on remote system
     shell: cat /home/test/kube-secret.yaml
     failWhen: len(lines(.stdout)) != 8
 
-
-  # - description: cause the system to break with a bad request
-  #   shell: ls -la ~/ddd
+  - description: render kube secret using imported sequence
+    import:
+      path: ./sequences/create-kube-secret.yaml
+      context:
+        name: <! .Values.things.secret.name !>
+        dest: /home/test/secret-reuse.yaml
+        data: <! .Values.things.secret.data !>

@@ -70,7 +70,9 @@ func TestSequenceIteration(t *testing.T) {
 	totalActions := 0
 	for {
 		hasMore := exInst.HasMore()
-		action := exInst.Next()
+		action, err := exInst.Next()
+		assert.NoError(t, err)
+
 		if hasMore {
 			assert.NotNil(t, action)
 		}
