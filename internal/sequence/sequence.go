@@ -122,6 +122,8 @@ func LoadSequence(cwdPath string, filename string) (*Sequence, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to read sequence file %s\n%w", filename, err)
 	}
+	b = bytes.ReplaceAll(b, []byte("{{"), []byte("<!!"))
+	b = bytes.ReplaceAll(b, []byte("}}"), []byte("!!>"))
 
 	s := &Sequence{}
 	err = yaml.Unmarshal(b, s)

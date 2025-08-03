@@ -33,7 +33,7 @@ sequence:
   - description: iterate the number set and make some output files
     iterate: .Values.things.numbers
     action:
-      shell: echo <! .item !> > ~/drop-zone/<! .item !>.txt
+      shell: echo {{ .item }} > ~/drop-zone/{{ .item }}.txt
 
   - description: list all dz contents
     shell: ls -la ~/drop-zone/*.txt
@@ -47,7 +47,7 @@ sequence:
   - description: iterate the number set and make some output files
     iterate: .Values.things.numbers
     action:
-      shell: cat ~/drop-zone/<! .item !>.txt
+      shell: cat ~/drop-zone/{{ .item }}.txt
       failWhen: line(.stdout) != string(.item)
 
   - description: delete iter files using exec
@@ -82,8 +82,8 @@ sequence:
       src: ./resources/kube-secret.yaml
       dest: /home/test/kube-secret.yaml
       context:
-        name: <! .Values.things.secret.name !>
-        data: <! .Values.things.secret.data !>
+        name: {{ .Values.things.secret.name }}
+        data: {{ .Values.things.secret.data }}
 
   - description: verify template exists on remote system
     shell: cat /home/test/kube-secret.yaml
@@ -93,6 +93,6 @@ sequence:
     import:
       path: ./sequences/create-kube-secret.yaml
       context:
-        name: <! .Values.things.secret.name !>
+        name: {{ .Values.things.secret.name }}
         dest: /home/test/secret-reuse.yaml
-        data: <! .Values.things.secret.data !>
+        data: {{ .Values.things.secret.data }}

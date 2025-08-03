@@ -8,10 +8,10 @@ import (
 	"github.com/frozengoats/eval"
 )
 
-var templateFinder = regexp.MustCompile(`<!\s*.*?\s*!>`)
+var templateFinder = regexp.MustCompile(`<!!\s*.*?\s*!!>`)
 
 func Render(template string, varLookup eval.VariableLookup, funcCall eval.FunctionCall) (any, error) {
-	isEncompassed := strings.HasPrefix(template, "<!") && strings.HasSuffix(template, "!>")
+	isEncompassed := strings.HasPrefix(template, "<!!") && strings.HasSuffix(template, "!!>")
 	matches := templateFinder.FindAllStringSubmatchIndex(template, -1)
 
 	if len(matches) == 1 && isEncompassed {
@@ -20,7 +20,7 @@ func Render(template string, varLookup eval.VariableLookup, funcCall eval.Functi
 		match := matches[0]
 		start := match[0]
 		end := match[1]
-		result, err := eval.Evaluate(template[start+2:end-2], varLookup, funcCall)
+		result, err := eval.Evaluate(template[start+3:end-3], varLookup, funcCall)
 		if err != nil {
 			return "", err
 		}
@@ -37,7 +37,7 @@ func Render(template string, varLookup eval.VariableLookup, funcCall eval.Functi
 			newParts = append(newParts, template[lastEnd:start])
 		}
 
-		result, err := eval.Evaluate(template[start+2:end-2], varLookup, funcCall)
+		result, err := eval.Evaluate(template[start+3:end-3], varLookup, funcCall)
 		if err != nil {
 			return "", err
 		}

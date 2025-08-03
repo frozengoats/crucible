@@ -10,16 +10,18 @@ var lookup map[string]func(args ...any) (any, error)
 
 func init() {
 	lookup = map[string]func(args ...any) (any, error){
-		"len":       length,
-		"trim":      trim,
-		"line":      line,
-		"lines":     lines,
-		"string":    toString,
-		"keys":      keys,
-		"values":    values,
-		"map":       doMap,
-		"b64encode": doB64encode,
-		"b64decode": doB64decode,
+		"len":          length,
+		"trim":         trim,
+		"line":         line,
+		"lines":        lines,
+		"string":       toString,
+		"keys":         keys,
+		"values":       values,
+		"map":          doMap,
+		"b64encode":    doB64encode,
+		"b64decode":    doB64decode,
+		"b64encodeUrl": doUrlSafeB64encode,
+		"b64decodeUrl": doUrlSafeB64decode,
 	}
 }
 
@@ -184,45 +186,21 @@ func doMap(args ...any) (any, error) {
 }
 
 func doB64encode(args ...any) (any, error) {
-	urlSafe := false
-	if len(args) > 2 || len(args) == 0 {
+	if len(args) != 1 {
 		return nil, fmt.Errorf("incorrect number of arguments")
-	}
-
-	if len(args) == 2 {
-		switch t := args[2].(type) {
-		case bool:
-			urlSafe = t
-		default:
-			return nil, fmt.Errorf("optional second argument must be a boolean, true for url safe encoding and false for not")
-		}
 	}
 
 	value, ok := args[0].(string)
 	if !ok {
 		return nil, fmt.Errorf("invalid argument type %T", value)
-	}
-
-	if urlSafe {
-		return base64.URLEncoding.EncodeToString([]byte(value)), nil
 	}
 
 	return base64.StdEncoding.EncodeToString([]byte(value)), nil
 }
 
 func doB64decode(args ...any) (any, error) {
-	urlSafe := false
-	if len(args) > 2 || len(args) == 0 {
+	if len(args) != 1 {
 		return nil, fmt.Errorf("incorrect number of arguments")
-	}
-
-	if len(args) == 2 {
-		switch t := args[2].(type) {
-		case bool:
-			urlSafe = t
-		default:
-			return nil, fmt.Errorf("optional second argument must be a boolean, true for url safe encoding and false for not")
-		}
 	}
 
 	value, ok := args[0].(string)
@@ -230,15 +208,37 @@ func doB64decode(args ...any) (any, error) {
 		return nil, fmt.Errorf("invalid argument type %T", value)
 	}
 
-	if urlSafe {
-		b, err := base64.URLEncoding.DecodeString(value)
-		if err != nil {
-			return nil, err
-		}
-		return string(b), nil
+	b, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, err
+	}
+	return string(b), nil
+}
+
+func doUrlSafeB64encode(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
 	}
 
-	b, err := base64.StdEncoding.DecodeString(value)
+	value, ok := args[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid argument type %T", value)
+	}
+
+	return base64.URLEncoding.EncodeToString([]byte(value)), nil
+}
+
+func doUrlSafeB64decode(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	value, ok := args[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid argument type %T", value)
+	}
+
+	b, err := base64.URLEncoding.DecodeString(value)
 	if err != nil {
 		return nil, err
 	}
