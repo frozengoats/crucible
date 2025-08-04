@@ -46,7 +46,9 @@ func (kh *SshKnownHosts) writeKnownHost(hostname string, remote net.Addr, key ss
 	if err != nil {
 		return fmt.Errorf("problem opening known_hosts file at %s\n%w", kh.filename, err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	err = knownhosts.WriteKnownHost(f, hostname, remote, key)
 	if err != nil {

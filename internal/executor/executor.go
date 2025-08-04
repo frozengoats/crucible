@@ -40,8 +40,6 @@ type Executor struct {
 	sequenceIndex     int
 }
 
-var passphraseLock sync.Mutex
-
 // NewExecutor creates an executor instance for dealing with a specific host and sequence
 func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Executor, error) {
 	hostConfig, ok := cfg.Hosts[hostIdent]
@@ -114,7 +112,9 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 		if err != nil {
 			return nil, fmt.Errorf("unable to create executor\n%w", err)
 		}
-		defer e.ExecutionInstance.Close()
+		defer func() {
+			_ = e.ExecutionInstance.Close()
+		}()
 		executors = append(executors, e)
 	}
 
@@ -146,7 +146,11 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 						}
 
 						// execute the action here, first clearing the immediate context from any previous run
-						e.ExecutionInstance.ExecContext.Set(map[string]any{}, sequence.ImmediateKey)
+						err = e.ExecutionInstance.ExecContext.Set(map[string]any{}, sequence.ImmediateKey)
+						if err != nil {
+							e.ExecutionInstance.SetError(err)
+							log.Error([]any{"host", e.HostIdent}, "execution terminated due to error: %s", err.Error())
+						}
 						err = e.ExecutionInstance.Execute(action)
 						if syncExecutionSteps || err != nil {
 							if err != nil {

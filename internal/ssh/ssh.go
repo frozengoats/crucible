@@ -123,7 +123,7 @@ func NewSsh(hostname string, port int, username string, keyFile string, knownHos
 
 func (s *SshSession) Close() error {
 	if s.client != nil {
-		result := s.client.Conn.Close()
+		result := s.client.Close()
 		s.client = nil
 		return result
 	}
@@ -191,6 +191,9 @@ func (s *SshSession) Connect() error {
 			return err
 		}
 		keyInAgent, err := sshAgent.KeyExists(pubKey)
+		if err != nil {
+			return err
+		}
 		if keyInAgent {
 			authMethod, err = sshAgent.GetAuthMethod()
 			if err != nil {

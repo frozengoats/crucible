@@ -23,7 +23,10 @@ func stackMap(base map[string]any, top map[string]any, fullKeyPath []string) err
 			switch topTarget := value.(type) {
 			case map[string]any:
 				// both base and top are maps, continue traversal
-				stackMap(baseTarget, topTarget, append(fullKeyPath, key))
+				err := stackMap(baseTarget, topTarget, append(fullKeyPath, key))
+				if err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("top layer changes data type at key %s", strings.Join(append(fullKeyPath, key), "."))
 			}

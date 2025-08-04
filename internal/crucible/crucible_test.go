@@ -103,7 +103,11 @@ func (suite *CrucibleTestSuite) SetupTest() {
 			"COMPLETION_FILE": CompletionFile,
 			"SSH_AUTH_SOCK":   socketFile,
 		},
-		Mounts: testcontainers.Mounts(testcontainers.BindMount(AgentUnixSocketDir, testcontainers.ContainerMountTarget(ContainerUnixSocketDir))),
+		HostConfigModifier: func(hc *container.HostConfig) {
+			hc.Binds = []string{
+				fmt.Sprintf("%s:%s", AgentUnixSocketDir, ContainerUnixSocketDir),
+			}
+		},
 		ConfigModifier: func(c *container.Config) {
 			c.User = fmt.Sprintf("%s:%s", cUser.Uid, cUser.Gid)
 		},
@@ -140,7 +144,8 @@ func (suite *CrucibleTestSuite) TestEndToEnd() {
 	}
 
 	extraConfig := kvstore.NewStore()
-	extraConfig.Set(suite.sshHost, "hosts", "testServer", "host")
+	err = extraConfig.Set(suite.sshHost, "hosts", "testServer", "host")
+	suite.NoError(err)
 	extraConfigBytes, err := yaml.Marshal(extraConfig.GetMapping())
 	suite.NoError(err)
 

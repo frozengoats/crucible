@@ -148,12 +148,11 @@ func (suite *SshTestSuite) SetupTest() {
 			"COMPLETION_FILE": CompletionFile,
 			"SSH_AUTH_SOCK":   AgentSocketFile,
 		},
-		Mounts: testcontainers.Mounts(
-			testcontainers.BindMount(
-				"/tmp",
-				"/tmp",
-			),
-		),
+		HostConfigModifier: func(hc *container.HostConfig) {
+			hc.Binds = []string{
+				"/tmp:/tmp",
+			}
+		},
 		ConfigModifier: func(c *container.Config) {
 			c.User = fmt.Sprintf("%s:%s", cUser.Uid, cUser.Gid)
 		},
@@ -190,7 +189,9 @@ func (suite *SshTestSuite) TearDownTest() {
 func (suite *SshTestSuite) TestUnknownHostDontAllow() {
 	privKey := filepath.Join(suite.testDataDir, "id_ed25519")
 	sshSession := NewSsh(suite.sshHost, 22, "test", privKey, KnownHostsFile, WithPassphraseProviderOption(NewTypedPassphraseProvider()))
-	defer sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 
 	// should fail b/c host is unknown and we don't allow for that
 	err := sshSession.Connect()
@@ -202,7 +203,9 @@ func (suite *SshTestSuite) TestUnknownHostAllow() {
 
 	// allow the unknown host to be connected to
 	sshSession := NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
-	defer sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 
 	err := sshSession.Connect()
 	suite.NoError(err)
@@ -213,13 +216,17 @@ func (suite *SshTestSuite) TestKnownHostNoProblem() {
 
 	// allow the unknown host to be connected to, so that we can cache it in our known_hosts
 	sshSession := NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
-	defer sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 	err := sshSession.Connect()
 	suite.NoError(err)
 
 	// this time, fail if a host is unknown.  it should already be part of our known_hosts though, so it should pass
 	sshSession = NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithPassphraseProviderOption(NewTypedPassphraseProvider()))
-	defer sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 	err = sshSession.Connect()
 	suite.NoError(err)
 }
@@ -229,20 +236,26 @@ func (suite *SshTestSuite) TestKeyWithPassphrase() {
 
 	// block entry with bad passphrase on locked private key
 	sshSession := NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("badphrase")))
-	defer sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 
 	err := sshSession.Connect()
 	suite.Error(err)
 
 	// admit entry once by providing the passphrase when prompted with the correct passphrase
 	sshSession = NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider(TestPassphrase)))
-	defer sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 	err = sshSession.Connect()
 	suite.NoError(err)
 
 	// admit entry even with empty phrase, because agent should now hold the unlocked key
 	sshSession = NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewDefaultPassphraseProvider("")))
-	defer sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 	err = sshSession.Connect()
 	suite.NoError(err)
 }
@@ -253,11 +266,15 @@ func (suite *SshTestSuite) TestRsyncNoPassphrase() {
 
 	// allow the unknown host to be connected to
 	sshSession := NewSsh(suite.sshHost, suite.sshPort, "test", privKey, KnownHostsFile, WithAllowUnknownHostsOption(true), WithPassphraseProviderOption(NewTypedPassphraseProvider()))
-	defer sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 
 	err := sshSession.Connect()
 	suite.NoError(err)
-	err = sshSession.Close()
+	defer func() {
+		_ = sshSession.Close()
+	}()
 	suite.NoError(err)
 
 	err = prepTestEnvironment()

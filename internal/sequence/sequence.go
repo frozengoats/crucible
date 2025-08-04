@@ -3,7 +3,6 @@ package sequence
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,8 +26,6 @@ import (
 var nameValidator = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 const ImmediateKey string = "__immediate"
-
-var EndOfSequence = errors.New("end of sequence reached")
 
 type ActionContext struct {
 	Name        string
@@ -93,6 +90,17 @@ type Action struct {
 	Template *Template `yaml:"template"` // render a template
 }
 
+func (a *Action) Validate() error {
+	if a.Name != "" {
+		if !nameValidator.MatchString(a.Name) {
+			return fmt.Errorf("action name \"%s\" is invalid, must contain only letter, numbers or underscores and cannot begin with a number", a.Name)
+		}
+	}
+
+	return nil
+
+}
+
 type Sequence struct {
 	Name        string    `yaml:"name"`
 	Description string    `yaml:"description"`
@@ -101,6 +109,19 @@ type Sequence struct {
 }
 
 func (s *Sequence) Validate() error {
+	if s.Name != "" {
+		if !nameValidator.MatchString(s.Name) {
+			return fmt.Errorf("sequence name \"%s\" is invalid, must contain only letter, numbers or underscores and cannot begin with a number", s.Name)
+		}
+	}
+
+	for _, a := range s.Sequence {
+		err := a.Validate()
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -170,10 +191,8 @@ type ExecutionInstance struct {
 	executionStack       []SeqPos
 	currentExecutionStep int
 	ImmediateContexts    []*ActionContext
-
-	varContext  *kvstore.Store // variable context
-	ExecContext *kvstore.Store // context accumulated through execution ()
-	lock        sync.Mutex
+	ExecContext          *kvstore.Store // context accumulated through execution ()
+	lock                 sync.Mutex
 
 	err error
 }
@@ -265,7 +284,10 @@ func (ei *ExecutionInstance) Next() (*Action, error) {
 				lastExecutionItem := ei.executionStack[len(ei.executionStack)-1]
 				ei.executionStack = ei.executionStack[:len(ei.executionStack)-1]
 				currentExecutionItem := ei.executionStack[len(ei.executionStack)-1]
-				currentExecutionItem.Context.Set(lastExecutionItem.Context.GetMapping(), currentExecutionItem.Sequence.Name)
+				err := currentExecutionItem.Context.Set(lastExecutionItem.Context.GetMapping(), currentExecutionItem.Sequence.Name)
+				if err != nil {
+					return nil, err
+				}
 			} else {
 				ei.executionStack = []SeqPos{}
 			}
@@ -361,7 +383,10 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 		}
 
 		for i, item := range iterableArray {
-			ei.ExecContext.Set(item, ImmediateKey, "item")
+			err = ei.ExecContext.Set(item, ImmediateKey, "item")
+			if err != nil {
+				return err
+			}
 			action.Action.Description = fmt.Sprintf("%s (iteration %d of %d)", action.Description, i+1, len(iterableArray))
 			err = ei.Execute(action.Action)
 			if err != nil {
@@ -391,8 +416,14 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 
 		log.Debug(context, "exit code: %d", exitCode)
 		log.Debug(context, "stdout\n%s", string(stdout))
-		ei.ExecContext.Set(string(stdout), ImmediateKey, "stdout")
-		ei.ExecContext.Set(exitCode, ImmediateKey, "exitCode")
+		err = ei.ExecContext.Set(string(stdout), ImmediateKey, "stdout")
+		if err != nil {
+			return err
+		}
+		err = ei.ExecContext.Set(exitCode, ImmediateKey, "exitCode")
+		if err != nil {
+			return err
+		}
 
 		if ei.config.Debug {
 			jBytes, err := json.Marshal(ei.ExecContext.GetMapping(ImmediateKey))
@@ -413,7 +444,10 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 				if err != nil {
 					return fmt.Errorf("unable to unmarshal json from stdout: %w", err)
 				}
-				ei.ExecContext.Set(jsonMap, ImmediateKey, "json")
+				err = ei.ExecContext.Set(jsonMap, ImmediateKey, "json")
+				if err != nil {
+					return err
+				}
 			}
 
 			if action.ParseYaml {
@@ -422,7 +456,10 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 				if err != nil {
 					return fmt.Errorf("unable to unmarshal yaml from stdout: %w", err)
 				}
-				ei.ExecContext.Set(yamlMap, ImmediateKey, "yaml")
+				err = ei.ExecContext.Set(yamlMap, ImmediateKey, "yaml")
+				if err != nil {
+					return err
+				}
 			}
 		}
 

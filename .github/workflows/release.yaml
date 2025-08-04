@@ -1,0 +1,41 @@
+name: execute release actions
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+    - "**"
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: get version
+      uses: frozengoats/github-actions/version@version-v1
+      with:
+        filename: VERSION
+
+    - name: lint-check
+      run: make lint-check
+
+    - name: test
+      run: make test
+
+    - name: build release
+      run: make build
+
+    - name: locate binary
+      run: ls -la ${{ github.workspace }}/bin/*
+
+    - uses: frozengoats/github-actions/release@release-v1
+      with:
+        create-release: true
+        create-version-tag: true
+        create-major-version-tag: true
+        binary-path: ${{ github.workspace }}/bin/crucible
+        binary-name: crucible
