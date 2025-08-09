@@ -96,3 +96,7 @@ sequence:
         name: {{ .Values.things.secret.name }}
         dest: /home/test/secret-reuse.yaml
         data: {{ .Values.things.secret.data }}
+
+  # - description: perform an action as another user
+  #   su: phonk
+  #   shell: echo "hello" > /home/phonk/phonk.txt

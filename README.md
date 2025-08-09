@@ -26,7 +26,7 @@ here's an [example](https://github.com/frozengoats/crucible/blob/main/testcontai
 sequences can be reusable if desired, meaning that a sequence can effectively be parameterized, and invoked from another sequence.  this allows for development and reuse of complex patterns which could ultimately give rise to a sequence marketplace.
 
 ### configuration file<a name="config-file"></a>
-the configuration file (`config.yaml`), which must reside directly within the project directory is built from the following [template](https://github.com/frozengoats/crucible/blob/main/template/config.yaml). not all fields are required, and typically, a minimal configuration is involved, though there are many options for customization, outlined in the template.
+the configuration file (`config.yaml`), which must reside directly within the project directory is built from the following [template](https://github.com/frozengoats/crucible/blob/main/docs/config.yaml). not all fields are required, and typically, a minimal configuration is involved, though there are many options for customization, outlined in the template.
 
 ## quick anatomy of a config file
 the config file is broken into 2 main parts, the executor, and the collection of hosts.  the executor itself needs no explicit configuration, and can largely go unconfigured for most situations, however the hosts themselves must be configured in order to have a sequence executed upon them.  the basic host configuration in a config file looks like this (see config.yaml template above for details [here](#config-file)):
@@ -81,4 +81,69 @@ name: prepareServer
 
 - description: write the number of pods to a file
   shell: echo {{ len(.Context.pods.json.items) }} > ~/num_pods.txt
+```
+
+## action specification
+actions define units of work to perform against the remote host.  actions can be iterative or even recursive.  here is the [action specification](https://github.com/frozengoats/crucible/blob/main/docs/action.yaml) in detail.  generally speaking, most fields in actions are templatable and other parts are even exclusively comprised of evaluable expressions.  for instance, the `iterate` field in an action only takes evaluable expressions (for instance variables, or more complex values as the result of function evaluation).
+
+consider this example action:
+```
+iterate: lines(.Context.files.stdout)
+action:
+  shell: echo {{ .item }} >> /tmp/items.txt
+```
+
+the `iterate` section of the action above only takes evaluable expressions, hence why they don't need to be wrapped in any templating markers.  the value stored on the sequence context `files.stdout`, will be passed to the `lines` function, which will split it into an array of single line strings which will then be iterated by `iterate`, causing a sub-action to be executed once per iteration.  in the sub-action, we see that the `shell` action is executed using the value `item` on the immediate context `.Values` indicates the values file context, `.Context` indicates the sequence context, and everything else beginnging with `.` indicates the immediate context.  in this case `iterate` will populate `item` on the immediate context, with the current item in the iteration loop.  in `shell`, which takes a string, we are using template notation `{{ <expression> }}` to indicate that we want to use the string value of `.item` as a part of the final string to be passed to the shell.
+
+another example of this behavior is the `until` clause:
+
+```
+until:
+  condition: .exitCode == 0
+  maxAttempts: 3
+  pauseInterval: 5
+ignoreExitCode: true
+shell: curl https://localhost:8888
+```
+
+in this case above, the action is NOT nested under the `until` clause.  this is because the `until` clause does not present any important new information to the action itself and thus nesting is not necessary.  in this case the `until` condition requires that the `exitCode` return a zero in order to complete.  it will retry 3 times with a 5 second delay between attempts.  we have explicitly set `ignoreExitCode` to `true` in order to disable the default behavior which is for a non-zero exit code to cause the action to fail with an error.  the curl command will execute at most 3 times if the exit code continues to be non-zero.
+
+we can take this example one step further by adding an until clause to an iterator:
+
+```
+iterate: .Values.urls
+action:
+  until:
+    condition: .exitCode == 0
+    maxAttempts: 3
+    pauseInterval: 5
+  ignoreExitCode: true
+  shell: curl {{ .item }}
+```
+
+in the case above, the action repeats once per url, and each url has up to 3 attempts to succeed before the entire action (top level) is deemed a failure.
+
+## evaluable expressions
+functions are implemented directly in `crucible` and a complete list can be found [here](https://github.com/frozengoats/crucible/blob/main/docs/functions.md).  they can be used in any template expression in a sequence file as well as in any evaluable expression in general.  functions can take one or more arguments but can only return single values (of any data type, meaning a single int, or a single array of n values, or a single map of n key/val pairs, etc.).
+
+for a detailed guide on constructing valid evaluable expressions see here [here](https://github.com/frozengoats/eval).  variables take the following form:
+```
+# variables from the values file stack take this form:
+.Values.something.else[0]
+.Values.key.key
+.Values.myKey
+
+# variables from the sequence context take this form:
+.Context.something[-1]
+.Context.key.myArray[1]
+.Context.myThing.stdout
+
+# variables in the immediate action context take this form:
+.item
+.stdout
+.exitCode
+.abc123[0]
+
+# essentially variables from the values stack start with .Values, variables in the sequence context start with .Context
+# and all other action context variables start with just .
 ```

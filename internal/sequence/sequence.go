@@ -18,6 +18,7 @@ import (
 	"github.com/frozengoats/crucible/internal/log"
 	"github.com/frozengoats/crucible/internal/render"
 	"github.com/frozengoats/crucible/internal/ssh"
+	"github.com/frozengoats/crucible/internal/utils"
 	"github.com/frozengoats/eval"
 	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
@@ -510,47 +511,88 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	return nil
 }
 
-func (ei *ExecutionInstance) GetExecutionString(action *Action) ([]string, bool, error) {
-	if len(action.Exec) == 0 && len(action.Shell) == 0 {
-		return nil, false, nil
-	}
-
-	if len(action.Exec) > 0 {
-		var renderedExec []string
-		for _, ex := range action.Exec {
-			rendEx, err := render.Render(ex, ei.variableLookup, functions.Call)
-			if err != nil {
-				return nil, false, fmt.Errorf("unable to template action exec command portion: %w", err)
-			}
-			renderedExec = append(renderedExec, render.ToString(rendEx))
-		}
-
-		return renderedExec, true, nil
-	}
-
-	shellExp, err := render.Render(action.Shell, ei.variableLookup, functions.Call)
+func (ei *ExecutionInstance) getSuUser(action *Action) (string, error) {
+	result, err := render.Render(action.Su, ei.variableLookup, functions.Call)
 	if err != nil {
-		return nil, false, fmt.Errorf("unable to template action shell command: %w", err)
+		return "", nil
+	}
+	return render.ToString(result), nil
+}
+
+func (ei *ExecutionInstance) getExecString(action *Action) ([]string, error) {
+	var renderedExec []string
+	for _, ex := range action.Exec {
+		rendEx, err := render.Render(ex, ei.variableLookup, functions.Call)
+		if err != nil {
+			return nil, fmt.Errorf("unable to template action exec command portion: %w", err)
+		}
+		renderedExec = append(renderedExec, render.ToString(rendEx))
 	}
 
-	shellStr := render.ToString(shellExp)
-
-	if strings.Contains(shellStr, "\"") {
-		shellStr = fmt.Sprintf("'%s'", shellStr)
-	} else {
-		shellStr = fmt.Sprintf("\"%s\"", shellStr)
+	if action.Sudo == false && action.Su == "" {
+		return renderedExec, nil
 	}
-	return []string{"sh", "-c", shellStr}, true, nil
+
+	if action.Sudo {
+		renderedExec = []string{"sudo", utils.QuoteAndCombine(renderedExec...)}
+	} else if action.Su != "" {
+		suUser, err := ei.getSuUser(action)
+		if err != nil {
+			return nil, err
+		}
+		renderedExec = []string{"sudo", "-H", "-u", suUser, utils.QuoteAndCombine(renderedExec...)}
+	}
+
+	return renderedExec, nil
+}
+
+func (ei *ExecutionInstance) getShellString(action *Action) ([]string, error) {
+	var renderedExec []string
+	rendEx, err := render.Render(action.Shell, ei.variableLookup, functions.Call)
+	if err != nil {
+		return nil, fmt.Errorf("unable to template action shell command portion: %w", err)
+	}
+
+	quoted := utils.QuoteAndCombine(render.ToString(rendEx))
+	renderedExec = []string{"sh", "-c", quoted}
+
+	if action.Sudo == false && action.Su == "" {
+		return renderedExec, nil
+	}
+	if action.Sudo {
+		renderedExec = []string{"sudo", "sh", "-c", quoted}
+	} else if action.Su != "" {
+		suUser, err := ei.getSuUser(action)
+		if err != nil {
+			return nil, err
+		}
+		renderedExec = []string{"sudo", "-H", "-u", suUser, "sh", "-c", quoted}
+	}
+
+	return renderedExec, nil
 }
 
 // executeSingleAction performs the action execution, returning the output, exit code, and or any error
 func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, error) {
-	execStr, ok, err := ei.GetExecutionString(action)
-	if err != nil {
-		return nil, 0, err
+	var err error
+	if action.Shell != "" && len(action.Exec) > 0 {
+		return nil, 0, fmt.Errorf("shell and exec directives are mutually exclusive")
 	}
 
-	if ok {
+	if action.Shell != "" || len(action.Exec) > 0 {
+		var execStr []string
+		if action.Shell != "" {
+			execStr, err = ei.getShellString(action)
+			if err != nil {
+				return nil, 0, err
+			}
+		} else if len(action.Exec) > 0 {
+			execStr, err = ei.getExecString(action)
+			if err != nil {
+				return nil, 0, err
+			}
+		}
+
 		var reader io.Reader
 		if action.Stdin != "" {
 			stdin, err := eval.Evaluate(action.Stdin, ei.variableLookup, functions.Call)
@@ -566,9 +608,6 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 			default:
 				return nil, 0, fmt.Errorf("action stdin must evaluate to a string or byte array (it is currently %T)", t)
 			}
-		}
-		if action.Sudo {
-			execStr = append([]string{"sudo"}, execStr...)
 		}
 		var execClient cmdsession.ExecutionClient
 		if action.Local {
@@ -664,5 +703,19 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 		return nil, 0, err
 	}
 
-	return executeRemoteCommand(ei.executionClient, &rendered, []string{"sh", "-c", fmt.Sprintf("cat > %s", dest)})
+	var execStr []string
+	shellStr := utils.QuoteAndCombine(fmt.Sprintf("cat > %s", dest))
+	if action.Sudo {
+		execStr = []string{"sudo", "sh", "-c", shellStr}
+	} else if action.Su != "" {
+		suUser, err := ei.getSuUser(action)
+		if err != nil {
+			return nil, 0, err
+		}
+		execStr = []string{"sudo", "-H", "-u", suUser, "sh", "-c", shellStr}
+	} else {
+		execStr = []string{"sh", "-c", shellStr}
+	}
+
+	return executeRemoteCommand(ei.executionClient, &rendered, execStr)
 }
