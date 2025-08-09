@@ -126,7 +126,9 @@ in the case above, the action repeats once per url, and each url has up to 3 att
 ## evaluable expressions
 functions are implemented directly in `crucible` and a complete list can be found [here](https://github.com/frozengoats/crucible/blob/main/docs/functions.md).  they can be used in any template expression in a sequence file as well as in any evaluable expression in general.  functions can take one or more arguments but can only return single values (of any data type, meaning a single int, or a single array of n values, or a single map of n key/val pairs, etc.).
 
-for a detailed guide on constructing valid evaluable expressions see here [here](https://github.com/frozengoats/eval).  variables take the following form:
+for a detailed guide on constructing valid evaluable expressions see [here](https://github.com/frozengoats/eval).
+
+variables take the following form:
 ```
 # variables from the values file stack take this form:
 .Values.something.else[0]

@@ -1,7 +1,10 @@
 package functions
 
 import (
+	"crypto/md5"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -13,19 +16,23 @@ var lookup map[string]func(args ...any) (any, error)
 
 func init() {
 	lookup = map[string]func(args ...any) (any, error){
+		"b64decode":    doB64decode,
+		"b64encode":    doB64encode,
+		"b64decodeUrl": doUrlSafeB64decode,
+		"b64encodeUrl": doUrlSafeB64encode,
+		"hash":         doHash,
+		"json":         toJson,
+		"keys":         keys,
 		"len":          length,
-		"trim":         trim,
 		"line":         line,
 		"lines":        lines,
-		"string":       toString,
-		"keys":         keys,
-		"values":       values,
+		"lower":        toLower,
 		"map":          doMap,
-		"b64encode":    doB64encode,
-		"b64decode":    doB64decode,
-		"b64encodeUrl": doUrlSafeB64encode,
-		"b64decodeUrl": doUrlSafeB64decode,
-		"json":         toJson,
+		"trim":         trim,
+		"split":        split,
+		"string":       toString,
+		"upper":        toUpper,
+		"values":       values,
 		"yaml":         toYamnl,
 	}
 }
@@ -276,6 +283,87 @@ func doUrlSafeB64decode(args ...any) (any, error) {
 		return nil, err
 	}
 	return string(b), nil
+}
+
+func doHash(args ...any) (any, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	input, ok := args[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("first argument must be a string")
+	}
+
+	algo, ok := args[1].(string)
+	if !ok {
+		return nil, fmt.Errorf("second argument must be a string")
+	}
+
+	switch algo {
+	case "md5":
+		hasher := md5.New()
+		_, err := hasher.Write([]byte(input))
+		if err != nil {
+			return nil, err
+		}
+
+		return hex.EncodeToString(hasher.Sum(nil)), nil
+	case "sha256":
+		hasher := sha256.New()
+		_, err := hasher.Write([]byte(input))
+		if err != nil {
+			return nil, err
+		}
+
+		return hex.EncodeToString(hasher.Sum(nil)), nil
+	default:
+		return nil, fmt.Errorf("valid algorithms are \"md5\", \"sha256\"")
+	}
+}
+
+func toUpper(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	switch t := args[0].(type) {
+	case string:
+		return strings.ToUpper(t), nil
+	default:
+		return nil, fmt.Errorf("argument must be a string")
+	}
+}
+
+func toLower(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	switch t := args[0].(type) {
+	case string:
+		return strings.ToLower(t), nil
+	default:
+		return nil, fmt.Errorf("argument must be a string")
+	}
+}
+
+func split(args ...any) (any, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	source, ok := args[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("first argument must be a string")
+	}
+
+	separator, ok := args[1].(string)
+	if !ok {
+		return nil, fmt.Errorf("second argument must be a string")
+	}
+
+	return from_string_array(strings.Split(source, separator)), nil
 }
 
 func Call(name string, args ...any) (any, error) {
