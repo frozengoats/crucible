@@ -9,3 +9,9 @@ things:
     data:
       username: waldo
       password: yaldo
+dataDump:
+  firstKey: hello
+  secondKey: world
+  data:
+    x: abc
+    y: 123

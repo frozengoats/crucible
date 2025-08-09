@@ -97,6 +97,30 @@ sequence:
         dest: /home/test/secret-reuse.yaml
         data: {{ .Values.things.secret.data }}
 
-  # - description: perform an action as another user
-  #   su: phonk
-  #   shell: echo "hello" > /home/phonk/phonk.txt
+  - description: perform a shell action as another user
+    su: phonk
+    shell: echo hello > /home/phonk/phonk.txt
+
+  - description: verify that shell as user file exists
+    sudo: true
+    shell: ls -la /home/phonk/phonk.txt
+
+  - description: perform an exec action as another user
+    su: phonk
+    exec:
+    - touch
+    - /home/phonk/phonk_exec.txt
+
+  - description: verify that exec as user file exists
+    sudo: true
+    shell: ls -la /home/phonk/phonk_exec.txt
+
+  - description: display data and pick it up
+    name: mySubCtx
+    import:
+      path: ./sequences/display-json-data.yaml
+      context:
+        json: {{ json(.Values.dataDump) }}
+
+  - description: verify sub-context data
+    failWhen: .Context.mySubCtx.capture.json.secondKey != world

@@ -36,6 +36,7 @@ type ActionContext struct {
 }
 
 type SeqPos struct {
+	Name     string
 	Context  *kvstore.Store
 	Sequence *Sequence
 	Position int
@@ -285,9 +286,11 @@ func (ei *ExecutionInstance) Next() (*Action, error) {
 				lastExecutionItem := ei.executionStack[len(ei.executionStack)-1]
 				ei.executionStack = ei.executionStack[:len(ei.executionStack)-1]
 				currentExecutionItem := ei.executionStack[len(ei.executionStack)-1]
-				err := currentExecutionItem.Context.Set(lastExecutionItem.Context.GetMapping(), currentExecutionItem.Sequence.Name)
-				if err != nil {
-					return nil, err
+				if lastExecutionItem.Name != "" {
+					err := currentExecutionItem.Context.Set(lastExecutionItem.Context.GetMapping(), lastExecutionItem.Name)
+					if err != nil {
+						return nil, err
+					}
 				}
 			} else {
 				ei.executionStack = []SeqPos{}
@@ -323,6 +326,7 @@ func (ei *ExecutionInstance) Next() (*Action, error) {
 			}
 
 			ei.executionStack = append(ei.executionStack, SeqPos{
+				Name:     action.Name,
 				Context:  newContext,
 				Sequence: action.SubSequence,
 				Position: -1,
@@ -534,13 +538,13 @@ func (ei *ExecutionInstance) getExecString(action *Action) ([]string, error) {
 	}
 
 	if action.Sudo {
-		renderedExec = []string{"sudo", utils.QuoteAndCombine(renderedExec...)}
+		renderedExec = append([]string{"sudo"}, renderedExec...)
 	} else if action.Su != "" {
 		suUser, err := ei.getSuUser(action)
 		if err != nil {
 			return nil, err
 		}
-		renderedExec = []string{"sudo", "-H", "-u", suUser, utils.QuoteAndCombine(renderedExec...)}
+		renderedExec = append([]string{"sudo", "-H", "-u", suUser}, renderedExec...)
 	}
 
 	return renderedExec, nil
@@ -595,7 +599,7 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 
 		var reader io.Reader
 		if action.Stdin != "" {
-			stdin, err := eval.Evaluate(action.Stdin, ei.variableLookup, functions.Call)
+			stdin, err := render.Render(action.Stdin, ei.variableLookup, functions.Call)
 			if err != nil {
 				return nil, 0, fmt.Errorf("unable to evaluate action stdin")
 			}
@@ -627,7 +631,7 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 		return ei.template(action)
 	}
 
-	return nil, 0, fmt.Errorf("unknown action execution")
+	return nil, 0, nil
 }
 
 func executeRemoteCommand(execClient cmdsession.ExecutionClient, stdin io.Reader, cmd []string) ([]byte, int, error) {

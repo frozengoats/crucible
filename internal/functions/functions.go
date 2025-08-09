@@ -2,8 +2,11 @@ package functions
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/goccy/go-yaml"
 )
 
 var lookup map[string]func(args ...any) (any, error)
@@ -22,6 +25,8 @@ func init() {
 		"b64decode":    doB64decode,
 		"b64encodeUrl": doUrlSafeB64encode,
 		"b64decodeUrl": doUrlSafeB64decode,
+		"json":         toJson,
+		"yaml":         toYamnl,
 	}
 }
 
@@ -99,6 +104,34 @@ func toString(args ...any) (any, error) {
 
 	arg := args[0]
 	return fmt.Sprintf("%v", arg), nil
+}
+
+func toJson(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	arg := args[0]
+	jBytes, err := json.Marshal(arg)
+	if err != nil {
+		return nil, err
+	}
+
+	return string(jBytes), nil
+}
+
+func toYamnl(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("incorrect number of arguments")
+	}
+
+	arg := args[0]
+	yBytes, err := yaml.Marshal(arg)
+	if err != nil {
+		return nil, err
+	}
+
+	return string(yBytes), nil
 }
 
 // keys returns an array of keys from a mapping type
