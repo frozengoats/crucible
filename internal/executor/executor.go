@@ -16,7 +16,7 @@ import (
 
 type ResultObj struct {
 	Error        string          `json:"error"`
-	Duration     float64         `json:"duration`
+	Duration     float64         `json:"duration"`
 	Values       json.RawMessage `json:"values"`
 	SuccessCount int             `json:"successCount"`
 	FailCount    int             `json:"failCount"`
