@@ -4,7 +4,13 @@ provision local and remote environments with a single binary (no dependencies)
 crucible is a powerful environment configuration tool which can be used to maintain one or many identical remote environments by focussing on the creation of reusable, idempotent action sequences.  what this means is that an action sequence can be configured to execute multiple times on the same system, and only the differences should be rectified between the machine state and the desired state.
 
 ## getting started
-download and install crucible on your deployment control machine:
+download and install the latest version crucible on your deployment control machine:
+```
+sudo sh -c "curl -o /usr/local/bin/crucible https://github.com/frozengoats/crucible/releases/latest/download/crucible && chmod +x /usr/local/bin/crucible"
+```
+once downloaded, run `crucible --help`
+
+check out the [example](https://github.com/frozengoats/crucible/blob/main/testcontainer/end-to-end) project for in-depth coverage of use cases.
 
 ## project structure
 projects are contained within a directory, and consist of a few components.  the core component in any project is the sequence.  a sequence is a series of steps which will be executed in the target environment.  a given project can have multple sequences, each of which perform a distinct function within the target enviornment, however the project itself encapsulates a group of environments and their configuration, both in terms of access, and the sequences which can be executed upon them.

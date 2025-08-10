@@ -33,7 +33,7 @@ jobs:
     - name: locate binary
       run: ls -la ${{ github.workspace }}/bin/*
 
-    - uses: frozengoats/github-actions/release@release_binaries
+    - uses: frozengoats/github-actions/release@release-v1
       with:
         create-release: true
         create-version-tag: true
