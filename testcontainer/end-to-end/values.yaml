@@ -1,0 +1,17 @@
+things:
+  numbers: [1, 2, 3, 4, 5]
+  words:
+  - alpha
+  - beta
+  - gamma
+  secret:
+    name: yello
+    data:
+      username: waldo
+      password: yaldo
+dataDump:
+  firstKey: hello
+  secondKey: world
+  data:
+    x: abc
+    y: 123

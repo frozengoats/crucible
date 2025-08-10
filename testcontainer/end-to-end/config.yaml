@@ -1,0 +1,8 @@
+executor:
+  ssh:
+    keyPath: /home/test/.ssh/id_ed25519
+    allowUnknownHosts: true
+
+hosts:
+  testServer:
+    host: 127.0.0.1

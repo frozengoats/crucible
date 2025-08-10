@@ -1,0 +1,126 @@
+description: test and verify all functionality of crucible
+sequence:
+
+  - description: list the contents of the current directory
+    shell: ls -la
+
+  - description: get the current working directory
+    shell: pwd
+
+  - description: get the current user
+    shell: whoami
+
+  - description: create a directory on the target machine
+    shell: mkdir -p ~/drop-zone
+
+  - description: verify the directory was created
+    shell: ls -la ~/drop-zone
+
+  - description: put some known text in the file
+    shell: echo "hello world" > ~/drop-zone/hello.txt
+
+  - name: hello
+    description: pull known text from file
+    shell: cat ~/drop-zone/hello.txt
+
+  - when: "line(.Context.hello.stdout) == 'hello world'"
+    description: place another file, confirming that the when clause worked
+    shell: echo "when is good" > ~/drop-zone/when.txt
+
+  - description: verify the when file
+    shell: ls -la ~/drop-zone/when.txt
+
+  - description: iterate the number set and make some output files
+    iterate: .Values.things.numbers
+    action:
+      shell: echo {{ .item }} > ~/drop-zone/{{ .item }}.txt
+
+  - description: list all dz contents
+    shell: ls -la ~/drop-zone/*.txt
+
+  - description: make sure one of those files exists and contains the right data
+    # this should fail on exit code if the file does not exist
+    shell: cat ~/drop-zone/3.txt
+    # if the file exists, we will hit this evaluation and fail if the data is incorrect
+    failWhen: line(.stdout) != "3"
+
+  - description: iterate the number set and make some output files
+    iterate: .Values.things.numbers
+    action:
+      shell: cat ~/drop-zone/{{ .item }}.txt
+      failWhen: line(.stdout) != string(.item)
+
+  - description: delete iter files using exec
+    exec:
+    - rm
+    - /home/test/drop-zone/*.txt
+
+  - description: put a single .txt file back in the drop zone
+    shell: echo "hello" > ~/drop-zone/h.txt
+
+  - description: make sure no .txt files exist
+    exec:
+    - ls
+    - -la
+    - ~/drop-zone/*.txt
+    failWhen: len(lines(.stdout)) != 1
+
+  - description: sync bundle to destination
+    sync:
+      src: /home/test/bundle
+      dest: /home/test
+
+  - description: verify bundle files
+    shell: ls -la ~/bundle/inner/inner_bundle.txt && ls -la ~/bundle/bundle.txt
+
+  - description: look at the file contents
+    shell: cat /home/test/bundle/bundle.txt
+    failWhen: len(lines(.stdout)) != 2 || lines(.stdout)[0] != "this is a text bundle"
+
+  - description: render a kube template
+    template:
+      src: ./resources/kube-secret.yaml
+      dest: /home/test/kube-secret.yaml
+      context:
+        name: {{ .Values.things.secret.name }}
+        data: {{ .Values.things.secret.data }}
+
+  - description: verify template exists on remote system
+    shell: cat /home/test/kube-secret.yaml
+    failWhen: len(lines(.stdout)) != 8
+
+  - description: render kube secret using imported sequence
+    import:
+      path: ./sequences/create-kube-secret.yaml
+      context:
+        name: {{ .Values.things.secret.name }}
+        dest: /home/test/secret-reuse.yaml
+        data: {{ .Values.things.secret.data }}
+
+  - description: perform a shell action as another user
+    su: phonk
+    shell: echo hello > /home/phonk/phonk.txt
+
+  - description: verify that shell as user file exists
+    sudo: true
+    shell: ls -la /home/phonk/phonk.txt
+
+  - description: perform an exec action as another user
+    su: phonk
+    exec:
+    - touch
+    - /home/phonk/phonk_exec.txt
+
+  - description: verify that exec as user file exists
+    sudo: true
+    shell: ls -la /home/phonk/phonk_exec.txt
+
+  - description: display data and pick it up
+    name: mySubCtx
+    import:
+      path: ./sequences/display-json-data.yaml
+      context:
+        json: {{ json(.Values.dataDump) }}
+
+  - description: verify sub-context data
+    failWhen: .Context.mySubCtx.capture.json.secondKey != world

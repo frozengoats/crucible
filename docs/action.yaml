@@ -1,0 +1,106 @@
+# determines the key by which the action results can be referred to in subsequent action steps.
+# it must consist of alpha-numeric and/or underscores, though it cannot begin with a number.
+# immediate context is recorded for the rest of the sequence, to the sequence context under this key, if present.
+name: myActionName
+
+# a description of what the action does, useful for debugging or watching progress
+description: my action does this specific thing
+
+# evaluable expression which evaluates to an array or otherwise iterable item
+# the sub-action (indicated by the `action` field), will be executed once per iteration of the iterable value,
+# with the `.item` value set on the immediate context.  sub-actions can have any valid field set.  they are no
+# different in that regard, than any other action
+iterate: .Values.items
+
+# imports another sequence and begins executing it.  paths here are relative to the project directory being executed
+# context keys are strings, but context variables can be any data type.  sub-sequences can be designed to use the
+# sequence context in order to effectively create parameterizable input, lending well to reuse.  if `name` is set,
+# the context of the imported sequence will be written to the context of the importing sequence, under the `name` field.
+import:
+  context:
+    abc: {{ .Context.xyz.abc[0] }}
+    def: hello
+    ghi: world
+  path: ./sequences/reusable-sequence.yaml
+
+# when allows conditional execution of the action, only when the condition evaluates to true.  when must be an
+# evaluable expression.  any truthy value can be used in this sense, to trigger the when clause
+when: .Context.xyz != .Context.abc
+
+# failWhen creates an explicit failure condition, allowing the action to evaluate results of execution as a
+# post process of the execution itself.  for instance, if a shell command is executed, the results will be
+# available in the immediate context for evaluation by the failWhen clause.  failWhen must be used in conjunction with
+# ignoreExitCode if the exit code being returned is non-zero, or the action will be terminated prior to evaluation
+# of failWhen.
+failWhen: .xyz == "abc"
+
+# when set to true, the exit code of a shell/exec command is not considered.  if false (default), all
+# non-zero exit codes will cause the sequence to terminate
+ignoreExitCode: true
+
+# until is a post action evaluation which causes the action to be re-executed until either the evaluable condition
+# is met, or the maxAttempts is exceeded, in which case the sequence will be terminated with error.  the pauseInterval
+# indicates how many seconds the system will wait before retrying the action execution after a failure of the until
+# condition.  if the until condition involves evaluation of .exitCode, then it must be used in conjuction with
+# ignoreExitCode in order to prevent premature termination of the action.
+until:
+  pauseInterval: 15
+  maxAttempts: 10
+  condition: .exitCode == 2
+
+# action defines a sub-action, which retains all the normal fields of this action definition.  this allows
+# for recursive behavior and at the current time is only used with an `iterate` directive.  this effectively
+# allows for further control directives to be applied to the nested action directive.
+action: ...
+
+# if true, parseJson will attempt to parse the stdout as json, where it will then be stored on the immediate
+# context as `.json`.
+parseJson: true
+
+# if true, parseYaml will attempt to parse the stdout as yaml, where it will then be stored on the immediate
+# context as `.yaml`.
+parseYaml: true
+
+# switches the user to the supplied user before executing a remote command
+su: someuser
+
+# executes the remote command as the super user.  the remote user must be part of sudoers and cannot require a
+# password prompt
+sudo:  true
+
+# if set to true, the command will be executed on the local system instead of the remote system
+local: true
+
+# if set, this input will be passed to the target command via the stdin
+stdin: some input to pass to the stdin
+
+# executes a command on the remote system, where the command is passed in exec form, as in one argument per
+# list item, starting with the executable itself as the first item
+exec:
+- ls
+- -la
+
+# executes a command on the remote system, where the command is a string passed to the remote shell
+shell: ls -la
+
+# syncs files and/or directories between the local and remote systems.  the src must be on the local system, while
+# the dest must be on the remote.
+sync:
+  src: ./resources/my-files
+  dest: /home/wherever/
+  preserveOwner: false
+  preservePerms: false
+  preserveGroup: false
+
+# renders a go template file located on the local host and writes it to the remote host.  src is the local
+# path, and dest is teh remote path.  context is a mapping of string keys and variable data type values.
+# any type can be passed to these values from the context and/or values store.  these can then be referenced
+# directly in the go template.
+template:
+  src: ./resources/file-template.yaml
+  dest:
+  context:
+    # example key value pairs, all up to the template creator
+    abc: {{ .Context.myAbc }}
+    name: {{ .Values.thing.name }}
+    description: some static description

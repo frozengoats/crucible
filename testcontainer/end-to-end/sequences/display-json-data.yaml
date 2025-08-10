@@ -1,0 +1,8 @@
+description: save some data so that it becomes available on the outer context
+sequence:
+
+  - description: output data supplied to the stdin which must be json, and make it available on the context
+    name: capture
+    stdin: {{ .Context.json }}
+    shell: cat
+    parseJson: true
