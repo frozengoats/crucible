@@ -8,7 +8,7 @@ executor:
   ssh:
 
     # OPTIONAL allow hosts with no entry in the known_hosts file to proceed with configuration (otherwise process is interrupted for said host)
-    allowUnknownHost: false
+    allowUnknownHosts: false
 
     # OPTIONAL allow hosts with a changed host key in the known_hosts file to proceed with configuration (otherwise process is interrupted for said host)
     ignoreHostKeyChange: false
@@ -46,7 +46,7 @@ hosts:
     ssh:
 
       # OPTIONAL allow this particular host to proceed even if it is not known in the known_hosts file
-      allowUnknownHost: false
+      allowUnknownHosts: false
 
       # OPTIONAL allow this particular host to proceed even if it has a modified host key
       ignoreHostKeyChange: false

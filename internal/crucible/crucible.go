@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/frozengoats/crucible/internal/executor"
@@ -78,6 +79,19 @@ func executeSequence(cwdPath string, configPaths []string, valuesPaths []string,
 		log.SetLevel(log.DEBUG)
 	} else {
 		log.SetLevel(log.INFO)
+	}
+
+	// fix paths containing the home directory
+	if strings.Contains(configObj.Executor.Ssh.KeyPath, "~") {
+		configObj.Executor.Ssh.KeyPath = strings.ReplaceAll(configObj.Executor.Ssh.KeyPath, "~", configObj.User.HomeDir)
+	}
+	if strings.Contains(configObj.Executor.Ssh.KnownHostsPath, "~") {
+		configObj.Executor.Ssh.KnownHostsPath = strings.ReplaceAll(configObj.Executor.Ssh.KnownHostsPath, "~", configObj.User.HomeDir)
+	}
+	for _, host := range configObj.Hosts {
+		if strings.Contains(host.Ssh.KeyPath, "~") {
+			host.Ssh.KeyPath = strings.ReplaceAll(host.Ssh.KeyPath, "~", configObj.User.HomeDir)
+		}
 	}
 
 	if jsonOutput {

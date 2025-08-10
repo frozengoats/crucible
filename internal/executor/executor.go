@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/frozengoats/crucible/internal/config"
@@ -14,6 +15,8 @@ import (
 )
 
 type ResultObj struct {
+	Error        string          `json:"error"`
+	Duration     float64         `json:"duration`
 	Values       json.RawMessage `json:"values"`
 	SuccessCount int             `json:"successCount"`
 	FailCount    int             `json:"failCount"`
@@ -70,7 +73,7 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 			cfg.KeyPath(hostIdent),
 			cfg.KnownHostsFile(hostIdent),
 			ssh.WithIgnoreHostKeyChangeOption(cfg.IgnoreHostKeyChange(hostIdent)),
-			ssh.WithAllowUnknownHostsOption(cfg.AllowUnknownHost(hostIdent)),
+			ssh.WithAllowUnknownHostsOption(cfg.AllowUnknownHosts(hostIdent)),
 			ssh.WithPassphraseProviderOption(ssh.NewTypedPassphraseProvider()),
 		)
 	}
@@ -100,6 +103,7 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 
 // RunConcurrentExecutionGroup creates and runs concurrent execution groups
 func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, hostIdents []string) ([]byte, error) {
+	start := time.Now()
 	maxConcurrentHosts := configObj.Executor.MaxConcurrentHosts
 	if len(hostIdents) < maxConcurrentHosts {
 		maxConcurrentHosts = len(hostIdents)
@@ -203,7 +207,6 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 		FailHosts:    []*FailedHost{},
 		Values:       valuesBytes,
 	}
-
 	for _, e := range executors {
 		if e.ExecutionInstance.GetError() != nil {
 			resultObj.FailCount++
@@ -223,9 +226,15 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 		}
 	}
 
+	duration := time.Now().Sub(start)
+	resultObj.Duration = float64(duration.Seconds())
 	resultObjBytes, err := json.Marshal(resultObj)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshal result object to JSON: %w", err)
+	}
+
+	if !configObj.Json {
+		log.Info(nil, "sequence completed in %s - %d successes and %d failures", duration.String(), resultObj.SuccessCount, resultObj.FailCount)
 	}
 
 	return resultObjBytes, nil

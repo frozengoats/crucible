@@ -18,7 +18,7 @@ var (
 )
 
 type SshConfig struct {
-	AllowUnknownHost    bool   `yaml:"allowUnknownHost"`
+	AllowUnknownHosts   bool   `yaml:"allowUnknownHosts"`
 	IgnoreHostKeyChange bool   `yaml:"ignoreHostKeyChange"`
 	KeyPath             string `yaml:"keyPath"`        // the main ssh key path, expected to be able to access all hosts except those with overrides
 	KnownHostsPath      string `yaml:"knownHostsPath"` // path to the known_hosts file
@@ -144,13 +144,13 @@ func (c *Config) KnownHostsFile(hostIdent string) string {
 	return c.getSshInfo(hostIdent).KnownHostsPath
 }
 
-func (c *Config) AllowUnknownHost(hostIdent string) bool {
-	if c.Hosts[hostIdent].Ssh.AllowUnknownHost {
-		return c.Hosts[hostIdent].Ssh.AllowUnknownHost
+func (c *Config) AllowUnknownHosts(hostIdent string) bool {
+	if c.Hosts[hostIdent].Ssh.AllowUnknownHosts {
+		return true
 	}
 
-	if c.Executor.Ssh.AllowUnknownHost {
-		return c.Executor.Ssh.AllowUnknownHost
+	if c.Executor.Ssh.AllowUnknownHosts {
+		return true
 	}
 
 	return false
@@ -158,11 +158,11 @@ func (c *Config) AllowUnknownHost(hostIdent string) bool {
 
 func (c *Config) IgnoreHostKeyChange(hostIdent string) bool {
 	if c.Hosts[hostIdent].Ssh.IgnoreHostKeyChange {
-		return c.Hosts[hostIdent].Ssh.IgnoreHostKeyChange
+		return true
 	}
 
 	if c.Executor.Ssh.IgnoreHostKeyChange {
-		return c.Executor.Ssh.IgnoreHostKeyChange
+		return true
 	}
 
 	return false

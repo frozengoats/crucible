@@ -24,7 +24,7 @@ func WithSshAuthSock(sshAuthSock string) AgentOption {
 }
 
 const (
-	SshAuthSockVar = "SSH_AUTH_SOCK="
+	SshAuthSockVar = "SSH_AUTH_SOCK"
 )
 
 var (

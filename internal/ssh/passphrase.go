@@ -1,11 +1,11 @@
 package ssh
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"strings"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 type PassphraseProvider interface {
@@ -18,12 +18,11 @@ type TypedPassphraseProvider struct {
 func (p *TypedPassphraseProvider) GetPassphrase() (string, error) {
 	// this is now an indication that this key is locked with a passphrase
 	fmt.Printf("enter your passphrase: ")
-	reader := bufio.NewReader(os.Stdin)
-	passPhrase, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
+	bytePassword, err := terminal.ReadPassword(int(os.Stdin.Fd()))
+	if err != nil {
 		return "", err
 	}
-
+	passPhrase := string(bytePassword)
 	return strings.Trim(passPhrase, "\n"), nil
 }
 

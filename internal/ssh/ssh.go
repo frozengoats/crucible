@@ -179,6 +179,7 @@ func (s *SshSession) Connect() error {
 
 	sshAgent, err := GetAgentInstance()
 	if err != nil {
+
 		// this means there's no ssh agent available
 		signer, _, err = GetPrivateKeySigner(s.keyFile, s.options.passphraseProvider)
 		if err != nil {
@@ -225,9 +226,7 @@ func (s *SshSession) Connect() error {
 	}
 
 	host := s.hostname
-	if s.port != 22 {
-		host = fmt.Sprintf("%s:%d", host, s.port)
-	}
+	host = fmt.Sprintf("%s:%d", host, s.port)
 	client, err := ssh.Dial("tcp", host, sshConfig)
 	if err != nil {
 		return fmt.Errorf("unable to establish ssh connection for %s\n%w", host, err)
