@@ -6,7 +6,7 @@ crucible is a powerful environment configuration tool which can be used to maint
 ## getting started
 download and install the latest version crucible on your deployment control machine:
 ```
-sudo sh -c "curl -o /usr/local/bin/crucible https://github.com/frozengoats/crucible/releases/latest/download/crucible && chmod +x /usr/local/bin/crucible"
+sudo sh -c "curl -L -o /usr/local/bin/crucible https://github.com/frozengoats/crucible/releases/latest/download/crucible && chmod +x /usr/local/bin/crucible"
 ```
 once downloaded, run `crucible --help`
 
