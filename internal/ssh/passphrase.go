@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 type PassphraseProvider interface {
@@ -18,7 +18,7 @@ type TypedPassphraseProvider struct {
 func (p *TypedPassphraseProvider) GetPassphrase() (string, error) {
 	// this is now an indication that this key is locked with a passphrase
 	fmt.Printf("enter your passphrase: ")
-	bytePassword, err := terminal.ReadPassword(int(os.Stdin.Fd()))
+	bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
 		return "", err
 	}

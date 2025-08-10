@@ -226,7 +226,7 @@ func RunConcurrentExecutionGroup(sequencePath string, configObj *config.Config, 
 		}
 	}
 
-	duration := time.Now().Sub(start)
+	duration := time.Since(start)
 	resultObj.Duration = float64(duration.Seconds())
 	resultObjBytes, err := json.Marshal(resultObj)
 	if err != nil {

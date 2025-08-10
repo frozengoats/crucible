@@ -533,7 +533,7 @@ func (ei *ExecutionInstance) getExecString(action *Action) ([]string, error) {
 		renderedExec = append(renderedExec, render.ToString(rendEx))
 	}
 
-	if action.Sudo == false && action.Su == "" {
+	if !action.Sudo && action.Su == "" {
 		return renderedExec, nil
 	}
 
@@ -560,7 +560,7 @@ func (ei *ExecutionInstance) getShellString(action *Action) ([]string, error) {
 	quoted := utils.QuoteAndCombine(render.ToString(rendEx))
 	renderedExec = []string{"sh", "-c", quoted}
 
-	if action.Sudo == false && action.Su == "" {
+	if !action.Sudo && action.Su == "" {
 		return renderedExec, nil
 	}
 	if action.Sudo {
