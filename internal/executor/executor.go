@@ -88,6 +88,10 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		return nil, err
 	}
 
+	exInst, err := s.NewExecutionInstance(executionClient, cfg, hostIdent)
+	if err != nil {
+		return nil, err
+	}
 	ex := &Executor{
 		Config:            cfg,
 		HostConfig:        hostConfig,
@@ -96,7 +100,7 @@ func NewExecutor(cfg *config.Config, hostIdent string, sequencePath string) (*Ex
 		executionClient:   executionClient,
 		sequence:          s,
 		sequenceIndex:     0,
-		ExecutionInstance: s.NewExecutionInstance(executionClient, cfg, hostIdent),
+		ExecutionInstance: exInst,
 	}
 	return ex, nil
 }

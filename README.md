@@ -99,7 +99,7 @@ action:
   shell: echo {{ .item }} >> /tmp/items.txt
 ```
 
-the `iterate` section of the action above only takes evaluable expressions, hence why they don't need to be wrapped in any templating markers.  the value stored on the sequence context `files.stdout`, will be passed to the `lines` function, which will split it into an array of single line strings which will then be iterated by `iterate`, causing a sub-action to be executed once per iteration.  in the sub-action, we see that the `shell` action is executed using the value `item` on the immediate context `.Values` indicates the values file context, `.Context` indicates the sequence context, and everything else beginnging with `.` indicates the immediate context.  in this case `iterate` will populate `item` on the immediate context, with the current item in the iteration loop.  in `shell`, which takes a string, we are using template notation `{{ <expression> }}` to indicate that we want to use the string value of `.item` as a part of the final string to be passed to the shell.
+the `iterate` section of the action above only takes evaluable expressions, hence why they don't need to be wrapped in any templating markers.  the value stored on the sequence context `files.stdout`, will be passed to the `lines` function, which will split it into an array of single line strings which will then be iterated by `iterate`, causing a sub-action to be executed once per iteration.  in the sub-action, we see that the `shell` action is executed using the value `item` on the immediate context `.Values` indicates the values file context, `.Context` indicates the sequence context, and `.Host` indicates it's from the host's config context, and everything else beginnging with `.` indicates the immediate context.  in this case `iterate` will populate `item` on the immediate context, with the current item in the iteration loop.  in `shell`, which takes a string, we are using template notation `{{ <expression> }}` to indicate that we want to use the string value of `.item` as a part of the final string to be passed to the shell.
 
 another example of this behavior is the `until` clause:
 
@@ -145,6 +145,11 @@ variables take the following form:
 .Context.something[-1]
 .Context.key.myArray[1]
 .Context.myThing.stdout
+
+# variables from the host context take this form:
+.Host.something[-1]
+.Host.key.myArray[1]
+.Host.myThing.stdout
 
 # variables in the immediate action context take this form:
 .item

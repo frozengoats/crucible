@@ -48,6 +48,12 @@ until:
   maxAttempts: 10
   condition: .exitCode == 2
 
+# causes execution to pause before and/or after the action.  not specifying one of before or after will result in no pause.
+# pause will not wait after the action if it fails in error.
+pause:
+  before: 5.0
+  after: 6.0
+
 # action defines a sub-action, which retains all the normal fields of this action definition.  this allows
 # for recursive behavior and at the current time is only used with an `iterate` directive.  this effectively
 # allows for further control directives to be applied to the nested action directive.

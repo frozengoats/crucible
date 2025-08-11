@@ -1,3 +1,7 @@
+# v0.0.4
+- pause feature
+- ssh recovery on failure
+- per host context
 # v0.0.3
 - fixed missing import on action, re-release attempt
 # v0.0.2

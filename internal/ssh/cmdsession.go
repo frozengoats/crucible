@@ -12,7 +12,7 @@ type SshCmdSession struct {
 	client *ssh.Client
 }
 
-// Execute executes a
+// Execute executes a remote command session
 func (s *SshCmdSession) Execute(stdin io.Reader, cmd ...string) ([]byte, error) {
 	sess, err := s.client.NewSession()
 	if err != nil {
