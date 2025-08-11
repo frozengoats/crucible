@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"text/template"
+	"time"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
 	"github.com/frozengoats/crucible/internal/config"
@@ -67,6 +68,11 @@ type Import struct {
 	Context map[string]string `yaml:"context"`
 }
 
+type Pause struct {
+	Before float64 `yaml:"before"`
+	After  float64 `yaml:"after"`
+}
+
 type Action struct {
 	Name           string    `yaml:"name"`           // the name of the action, referrable from other actions (unnamed actions will not capture or retain data)
 	Description    string    `yaml:"description"`    // action description
@@ -83,6 +89,7 @@ type Action struct {
 	Sudo           bool      `yaml:"sudo"`           // run the command as root
 	SubSequence    *Sequence `yaml:"subSequence"`    // sub sequence if imported
 	Local          bool      `yaml:"local"`          // when true, action will be executed locally instead of remotely, this is useful for preparing local assets which might need to be present locally but not remotely
+	Pause          *Pause    `yaml:"pause"`          // pause for n seconds before and/or after the action
 
 	// these properties are independent action properties, mutually exclusive
 	Stdin    string    `yaml:"stdin"`    // only valid with exec/shell
@@ -194,12 +201,25 @@ type ExecutionInstance struct {
 	currentExecutionStep int
 	ImmediateContexts    []*ActionContext
 	ExecContext          *kvstore.Store // context accumulated through execution ()
+	HostContext          *kvstore.Store // per host config context
 	lock                 sync.Mutex
 
 	err error
 }
 
-func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) *ExecutionInstance {
+func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClient, config *config.Config, hostIdent string) (*ExecutionInstance, error) {
+	var hostContext *kvstore.Store
+	var err error
+	hostContextSource := config.Hosts[hostIdent].Context
+	if hostContextSource != nil {
+		hostContext, err = kvstore.FromMapping(hostContextSource)
+		if err != nil {
+			return nil, fmt.Errorf("unable to set host context: %w", err)
+		}
+	} else {
+		hostContext = kvstore.NewStore()
+	}
+
 	return &ExecutionInstance{
 		config:               config,
 		hostIdent:            hostIdent,
@@ -208,7 +228,8 @@ func (s *Sequence) NewExecutionInstance(executionClient cmdsession.ExecutionClie
 		localExecutionClient: cmdsession.NewLocalExecutionClient(),
 		sequence:             s,
 		totalExecutionSteps:  s.CountExecutionSteps(),
-	}
+		HostContext:          hostContext,
+	}, nil
 }
 
 func (ei *ExecutionInstance) SetError(err error) {
@@ -343,6 +364,9 @@ func (ei *ExecutionInstance) variableLookup(key string) (any, error) {
 	} else if strings.HasPrefix(key, ".Context.") {
 		key = strings.TrimPrefix(key, ".Context.")
 		store = ei.ExecContext
+	} else if strings.HasPrefix(key, ".Host.") {
+		key = strings.TrimPrefix(key, ".Host.")
+		store = ei.HostContext
 	} else {
 		// assume immediate context if not prefixed by one of the two known namespace classifiers
 		key = fmt.Sprintf("%s%s", ImmediateKey, key)
@@ -361,6 +385,11 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 		"host", ei.hostIdent,
 	}
 	log.Info(context, "processing action \"%s\"", action.Description)
+
+	if action.Pause != nil && action.Pause.Before > 0 {
+		log.Debug(context, "pausing before action execution for %0.2f seconds", action.Pause.Before)
+		time.Sleep(time.Second * time.Duration(action.Pause.Before))
+	}
 
 	// first, determine if the action should be executed or not
 	if action.When != "" {
@@ -512,6 +541,11 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 		}
 	}
 
+	if action.Pause != nil && action.Pause.After > 0 {
+		log.Debug(context, "pausing after action execution for %0.2f seconds", action.Pause.After)
+		time.Sleep(time.Second * time.Duration(action.Pause.After))
+	}
+
 	return nil
 }
 
@@ -619,7 +653,7 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 		} else {
 			execClient = ei.executionClient
 		}
-		return executeRemoteCommand(execClient, reader, execStr)
+		return ei.executeRemoteCommand(execClient, reader, execStr)
 	}
 
 	// if the code gets to this point, it's a sync
@@ -634,24 +668,45 @@ func (ei *ExecutionInstance) executeSingleAction(action *Action) ([]byte, int, e
 	return nil, 0, nil
 }
 
-func executeRemoteCommand(execClient cmdsession.ExecutionClient, stdin io.Reader, cmd []string) ([]byte, int, error) {
+func (ei *ExecutionInstance) executeRemoteCommand(execClient cmdsession.ExecutionClient, stdin io.Reader, cmd []string) ([]byte, int, error) {
 	// create a new command session
-	sess, err := execClient.NewCmdSession()
-	if err != nil {
-		return nil, 0, err
-	}
-
-	output, err := sess.Execute(stdin, cmd...)
-	if err != nil {
-		exitCode, hasExitCode := cmdsession.GetExitCode(err)
-		if !hasExitCode {
+	var output []byte
+	attempts := 0
+	for {
+		sess, err := execClient.NewCmdSession()
+		if err != nil {
 			return nil, 0, err
 		}
 
-		return output, exitCode, nil
-	}
+		output, err = sess.Execute(stdin, cmd...)
+		if err != nil {
+			attempts++
+			_, ok := err.(*cmdsession.SessionError)
+			if ok {
+				if attempts >= ei.config.Executor.Ssh.MaxConnectionAttempts {
+					return nil, 0, err
+				}
 
-	return output, 0, nil
+				log.Debug(nil, "waiting %0.2f seconds before attempting SSH retry after failure", ei.config.Executor.Ssh.DelayAfterConnectionFailure)
+				_ = execClient.Close()
+				time.Sleep(time.Duration(ei.config.Executor.Ssh.DelayAfterConnectionFailure) * time.Second)
+				err = execClient.Connect()
+				if err != nil {
+					log.Debug(nil, "%s", err.Error())
+				}
+				continue
+			}
+
+			exitCode, hasExitCode := cmdsession.GetExitCode(err)
+			if !hasExitCode {
+				return nil, 0, err
+			}
+
+			return output, exitCode, nil
+		}
+
+		return output, 0, nil
+	}
 }
 
 func (ei *ExecutionInstance) sync(action *Action) error {
@@ -721,5 +776,5 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 		execStr = []string{"sh", "-c", shellStr}
 	}
 
-	return executeRemoteCommand(ei.executionClient, &rendered, execStr)
+	return ei.executeRemoteCommand(ei.executionClient, &rendered, execStr)
 }

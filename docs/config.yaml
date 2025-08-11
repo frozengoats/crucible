@@ -22,6 +22,12 @@ executor:
     # OPTIONAL username to use for the ssh connection, for all hosts, otherwise the current executing user will be inferred
     user: other
 
+    # maximum number of attempts to establish an SSH connetion after a period of disconnection
+    maxConnectionAttempts:  20
+
+    # number of seconds to wait after connection failure before retrying
+    delayAfterConnectionFailure: 5.0
+
   # if set to true, all targetted hosts needs to complete any given execution step before any can proceed to the next
   # if any host errors on a given step, it will stop all hosts from proceeding to the next
   syncExecutionSteps: false
@@ -60,3 +66,13 @@ hosts:
       # OPTIONAL value which allows this specific host to use a specific ssh user instead of the current executing user.  do not provide
       # this pair if the executing user is the ssh user for this host.
       user: other
+
+    # the context is a mapping of limitless depth, which can be used to hold data on a per-host basis
+    # this is accessed through the .Host. variable accessor
+    context:
+      xxx: 123
+      yyy: 456
+      abc:
+      - hello
+      - world
+      - etc

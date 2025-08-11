@@ -18,11 +18,13 @@ var (
 )
 
 type SshConfig struct {
-	AllowUnknownHosts   bool   `yaml:"allowUnknownHosts"`
-	IgnoreHostKeyChange bool   `yaml:"ignoreHostKeyChange"`
-	KeyPath             string `yaml:"keyPath"`        // the main ssh key path, expected to be able to access all hosts except those with overrides
-	KnownHostsPath      string `yaml:"knownHostsPath"` // path to the known_hosts file
-	User                string `yaml:"user"`
+	AllowUnknownHosts           bool    `yaml:"allowUnknownHosts"`
+	IgnoreHostKeyChange         bool    `yaml:"ignoreHostKeyChange"`
+	KeyPath                     string  `yaml:"keyPath"`        // the main ssh key path, expected to be able to access all hosts except those with overrides
+	KnownHostsPath              string  `yaml:"knownHostsPath"` // path to the known_hosts file
+	User                        string  `yaml:"user"`
+	MaxConnectionAttempts       int     `yaml:"maxConnectionAttempts" default:"20"`        // maximum consecutive connection attempts
+	DelayAfterConnectionFailure float64 `yaml:"delayAfterConnectionFailure" default:"5.0"` // number of seconds to wait before retrying
 }
 
 type Executor struct {

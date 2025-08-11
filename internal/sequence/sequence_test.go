@@ -57,7 +57,7 @@ func TestSequenceIteration(t *testing.T) {
 		},
 	}
 
-	exInst := seq.NewExecutionInstance(
+	exInst, err := seq.NewExecutionInstance(
 		cmdsession.NewDummyExecutionClient(),
 		&config.Config{
 			Hosts: map[string]*config.HostConfig{
@@ -66,6 +66,7 @@ func TestSequenceIteration(t *testing.T) {
 		},
 		"testhost",
 	)
+	assert.NoError(t, err)
 
 	totalActions := 0
 	for {
