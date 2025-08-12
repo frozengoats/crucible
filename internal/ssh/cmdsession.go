@@ -2,9 +2,9 @@ package ssh
 
 import (
 	"io"
-	"strings"
 
 	"github.com/frozengoats/crucible/internal/cmdsession"
+	"github.com/frozengoats/crucible/internal/utils"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -23,7 +23,7 @@ func (s *SshCmdSession) Execute(stdin io.Reader, cmd ...string) ([]byte, error) 
 		sess.Stdin = stdin
 	}
 
-	output, err := sess.Output(strings.Join(cmd, " "))
+	output, err := sess.Output(utils.Quote(cmd...))
 	if err != nil {
 		exitErr, ok := err.(*ssh.ExitError)
 		if ok {

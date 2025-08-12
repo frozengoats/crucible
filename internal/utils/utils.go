@@ -5,25 +5,34 @@ import (
 	"strings"
 )
 
-func QuoteAndCombine(parts ...string) string {
-	needQuotes := false
+func Quote(parts ...string) string {
+	var newParts []string
+	for _, p := range parts {
+		if strings.Contains(p, " ") {
+			if strings.HasPrefix(p, "\"") && strings.HasSuffix(p, "\"") {
+				newParts = append(newParts, p)
+				continue
+			}
 
-	if len(parts) == 1 {
-		if strings.Contains(parts[0], " ") {
-			needQuotes = true
+			if strings.HasPrefix(p, "'") && strings.HasSuffix(p, "'") {
+				newParts = append(newParts, p)
+				continue
+			}
+
+			if strings.Contains(p, "\"") {
+				newParts = append(newParts, fmt.Sprintf("'%s'", p))
+				continue
+			}
+
+			newParts = append(newParts, fmt.Sprintf("\"%s\"", p))
+		} else {
+			newParts = append(newParts, p)
 		}
-	} else {
-		needQuotes = true
 	}
 
-	singleString := strings.Join(parts, " ")
-	if !needQuotes {
-		return singleString
-	}
+	return strings.Join(newParts, " ")
+}
 
-	if strings.Contains(singleString, "\"") {
-		return fmt.Sprintf("'%s'", singleString)
-	}
-
-	return fmt.Sprintf("\"%s\"", singleString)
+func Combine(parts ...string) string {
+	return strings.Join(parts, " ")
 }
