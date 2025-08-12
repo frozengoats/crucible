@@ -591,20 +591,19 @@ func (ei *ExecutionInstance) getShellString(action *Action) ([]string, error) {
 		return nil, fmt.Errorf("unable to template action shell command portion: %w", err)
 	}
 
-	quoted := utils.QuoteAndCombine(render.ToString(rendEx))
-	renderedExec = []string{"sh", "-c", quoted}
+	combined := utils.Combine(render.ToString(rendEx))
 
 	if !action.Sudo && action.Su == "" {
-		return renderedExec, nil
+		return []string{"sh", "-c", combined}, nil
 	}
 	if action.Sudo {
-		renderedExec = []string{"sudo", "sh", "-c", quoted}
+		renderedExec = []string{"sudo", "sh", "-c", combined}
 	} else if action.Su != "" {
 		suUser, err := ei.getSuUser(action)
 		if err != nil {
 			return nil, err
 		}
-		renderedExec = []string{"sudo", "-H", "-u", suUser, "sh", "-c", quoted}
+		renderedExec = []string{"sudo", "-H", "-u", suUser, "sh", "-c", combined}
 	}
 
 	return renderedExec, nil
@@ -763,7 +762,7 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 	}
 
 	var execStr []string
-	shellStr := utils.QuoteAndCombine(fmt.Sprintf("cat > %s", dest))
+	shellStr := utils.Combine(fmt.Sprintf("cat > %s", dest))
 	if action.Sudo {
 		execStr = []string{"sudo", "sh", "-c", shellStr}
 	} else if action.Su != "" {

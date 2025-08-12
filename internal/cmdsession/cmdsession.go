@@ -110,6 +110,7 @@ type LocalCmdSession struct {
 }
 
 func (c *LocalCmdSession) Execute(stdin io.Reader, cmd ...string) ([]byte, error) {
+	fmt.Printf("%+v\n", cmd)
 	com := exec.Command(cmd[0], cmd[1:]...)
 	if stdin != nil {
 		com.Stdin = stdin
