@@ -1,3 +1,5 @@
+# v0.0.5
+- fix issues with local execution
 # v0.0.4
 - pause feature
 - ssh recovery on failure
