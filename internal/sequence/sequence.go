@@ -594,16 +594,16 @@ func (ei *ExecutionInstance) getShellString(action *Action) ([]string, error) {
 	combined := utils.Combine(render.ToString(rendEx))
 
 	if !action.Sudo && action.Su == "" {
-		return []string{"sh", "-c", combined}, nil
+		return []string{ei.config.Executor.ShellBinary, "-c", combined}, nil
 	}
 	if action.Sudo {
-		renderedExec = []string{"sudo", "sh", "-c", combined}
+		renderedExec = []string{"sudo", ei.config.Executor.ShellBinary, "-c", combined}
 	} else if action.Su != "" {
 		suUser, err := ei.getSuUser(action)
 		if err != nil {
 			return nil, err
 		}
-		renderedExec = []string{"sudo", "-H", "-u", suUser, "sh", "-c", combined}
+		renderedExec = []string{"sudo", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", combined}
 	}
 
 	return renderedExec, nil
@@ -679,21 +679,24 @@ func (ei *ExecutionInstance) executeRemoteCommand(execClient cmdsession.Executio
 
 		output, err = sess.Execute(stdin, cmd...)
 		if err != nil {
-			attempts++
 			_, ok := err.(*cmdsession.SessionError)
 			if ok {
-				if attempts >= ei.config.Executor.Ssh.MaxConnectionAttempts {
-					return nil, 0, err
-				}
-
 				log.Debug(nil, "waiting %0.2f seconds before attempting SSH retry after failure", ei.config.Executor.Ssh.DelayAfterConnectionFailure)
 				_ = execClient.Close()
-				time.Sleep(time.Duration(ei.config.Executor.Ssh.DelayAfterConnectionFailure) * time.Second)
-				err = execClient.Connect()
-				if err != nil {
-					log.Debug(nil, "%s", err.Error())
+				for {
+					err = execClient.Connect()
+					if err != nil {
+						log.Debug(nil, "%s", err.Error())
+						attempts++
+						if attempts >= ei.config.Executor.Ssh.MaxConnectionAttempts {
+							return nil, 0, err
+						}
+
+						time.Sleep(time.Duration(ei.config.Executor.Ssh.DelayAfterConnectionFailure) * time.Second)
+						continue
+					}
+					break
 				}
-				continue
 			}
 
 			exitCode, hasExitCode := cmdsession.GetExitCode(err)
@@ -764,15 +767,15 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 	var execStr []string
 	shellStr := utils.Combine(fmt.Sprintf("cat > %s", dest))
 	if action.Sudo {
-		execStr = []string{"sudo", "sh", "-c", shellStr}
+		execStr = []string{"sudo", ei.config.Executor.ShellBinary, "-c", shellStr}
 	} else if action.Su != "" {
 		suUser, err := ei.getSuUser(action)
 		if err != nil {
 			return nil, 0, err
 		}
-		execStr = []string{"sudo", "-H", "-u", suUser, "sh", "-c", shellStr}
+		execStr = []string{"sudo", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", shellStr}
 	} else {
-		execStr = []string{"sh", "-c", shellStr}
+		execStr = []string{ei.config.Executor.ShellBinary, "-c", shellStr}
 	}
 
 	return ei.executeRemoteCommand(ei.executionClient, &rendered, execStr)
