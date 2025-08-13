@@ -1,3 +1,5 @@
+# v0.0.7
+- updated test case in end-to-end test
 # v0.0.6
 - add default shell binary specifier
 # v0.0.5
