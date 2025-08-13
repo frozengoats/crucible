@@ -4,6 +4,9 @@ executor:
   # OPTIONAL maximum number of hosts which the executor will attempt to execute upon concurrently
   maxConcurrentHosts: 10
 
+  # OPTIONAL full path or executable name of default shell to use
+  shellBinary: "sh"
+
   # OPTIONAL ssh related configuration
   ssh:
 

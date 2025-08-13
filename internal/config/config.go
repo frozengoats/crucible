@@ -29,6 +29,7 @@ type SshConfig struct {
 
 type Executor struct {
 	MaxConcurrentHosts int       `yaml:"maxConcurrentHosts" default:"10"`
+	ShellBinary        string    `yaml:"shellBinary" default:"sh"`
 	Ssh                SshConfig `yaml:"ssh"`
 	SyncExecutionSteps bool      `yaml:"syncExecutionSteps"` // if true, execution step must complete on all hosts before advancing
 }
