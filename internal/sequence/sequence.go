@@ -679,21 +679,24 @@ func (ei *ExecutionInstance) executeRemoteCommand(execClient cmdsession.Executio
 
 		output, err = sess.Execute(stdin, cmd...)
 		if err != nil {
-			attempts++
 			_, ok := err.(*cmdsession.SessionError)
 			if ok {
-				if attempts >= ei.config.Executor.Ssh.MaxConnectionAttempts {
-					return nil, 0, err
-				}
-
 				log.Debug(nil, "waiting %0.2f seconds before attempting SSH retry after failure", ei.config.Executor.Ssh.DelayAfterConnectionFailure)
 				_ = execClient.Close()
-				time.Sleep(time.Duration(ei.config.Executor.Ssh.DelayAfterConnectionFailure) * time.Second)
-				err = execClient.Connect()
-				if err != nil {
-					log.Debug(nil, "%s", err.Error())
+				for {
+					err = execClient.Connect()
+					if err != nil {
+						log.Debug(nil, "%s", err.Error())
+						attempts++
+						if attempts >= ei.config.Executor.Ssh.MaxConnectionAttempts {
+							return nil, 0, err
+						}
+
+						time.Sleep(time.Duration(ei.config.Executor.Ssh.DelayAfterConnectionFailure) * time.Second)
+						continue
+					}
+					break
 				}
-				continue
 			}
 
 			exitCode, hasExitCode := cmdsession.GetExitCode(err)
