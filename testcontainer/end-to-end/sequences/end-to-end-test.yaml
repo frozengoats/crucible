@@ -93,9 +93,9 @@ sequence:
     import:
       path: ./sequences/create-kube-secret.yaml
       context:
-        name: {{ .Values.things.secret.name }}
         dest: /home/test/secret-reuse.yaml
-        data: {{ .Values.things.secret.data }}
+        secretName: {{ .Values.things.secret.name }}
+        secretData: {{ .Values.things.secret.data }}
 
   - description: perform a shell action as another user
     su: phonk
