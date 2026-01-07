@@ -17,6 +17,12 @@ type TypedPassphraseProvider struct {
 
 func (p *TypedPassphraseProvider) GetPassphrase() (string, error) {
 	// this is now an indication that this key is locked with a passphrase
+	// first check the environment for a passphrase, this is mostly used for debugging
+	phrase := os.Getenv("CRUCIBLE_SSH_KEY_PASSPHRASE")
+	if len(phrase) > 0 {
+		return phrase, nil
+	}
+
 	fmt.Printf("enter your passphrase: ")
 	bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
 	if err != nil {
