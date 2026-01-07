@@ -7,6 +7,10 @@ executor:
   # OPTIONAL full path or executable name of default shell to use
   shellBinary: "sh"
 
+  # OPTIONAL directive to force sudo to prompt for a password when required.  it will prompt once and re-use across systems
+  # on every subsequent sudo call
+  sudoPrompt: false
+
   # OPTIONAL ssh related configuration
   ssh:
 

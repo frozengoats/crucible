@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"os/user"
 	"sync"
 
@@ -46,15 +47,34 @@ type UserConfig struct {
 	HomeDir  string
 }
 
+var ConfigInst *Config
+
 type Config struct {
 	// keys are unique host identifiers, though they themselves have no meaning
 	Executor    Executor               `yaml:"executor"`
 	Hosts       map[string]*HostConfig `yaml:"hosts"`
+	SudoPrompt  bool                   `yaml:"sudoPrompt"`
 	ValuesStore *kvstore.Store
 	User        *UserConfig
 	Debug       bool
 	Json        bool
 	CwdPath     string
+	sudoPass    string
+}
+
+func (c *Config) GetSudoPass() string {
+	if c.sudoPass == "" {
+		// inject this in if it is being used during a tty-less debugging session and is set
+		sudoPass := os.Getenv("CRUCIBLE_SUDO_PASSWORD")
+		if sudoPass != "" {
+			c.sudoPass = sudoPass
+		}
+	}
+	return c.sudoPass
+}
+
+func (c *Config) SetSudoPass(value string) {
+	c.sudoPass = value
 }
 
 func FromFilePaths(stackPaths ...string) (*Config, error) {

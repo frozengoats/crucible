@@ -6,7 +6,7 @@ crucible is a powerful environment configuration tool which can be used to maint
 ## getting started
 download the latest version crucible your deployment control machine and place it in your path:
 ```
-sudo sh -c "curl -L -o /usr/local/bin/crucible https://github.com/frozengoats/crucible/releases/latest/download/crucible && chmod +x /usr/local/bin/crucible"
+sudo rm -f /usr/local/bin/crucible && sudo sh -c "curl -L -o /usr/local/bin/crucible https://github.com/frozengoats/crucible/releases/latest/download/crucible && chmod +x /usr/local/bin/crucible"
 ```
 once downloaded, run `crucible --help`
 
@@ -62,7 +62,7 @@ name: prepareServer
 
 # next is the sequence of actions which will be performed on the target host
 
-
+sequence:
 
 # this action will install rsync, or do nothing if rsync is already installed
 # we should always construct actions to be both idempotent and minimal, as it will ensure the most performant experience
@@ -159,4 +159,16 @@ variables take the following form:
 
 # essentially variables from the values stack start with .Values, variables in the sequence context start with .Context
 # and all other action context variables start with just .
+```
+
+## extra tidbits
+
+For automatic passphrase injection, supply this environment variable with the SSH key passphrase.
+```
+CRUCIBLE_SSH_KEY_PASSPHRASE
+```
+
+For automatic sudo prompt injection, supply this environment variable with the sudo password.
+```
+CRUCIBLE_SUDO_PASSWORD
 ```

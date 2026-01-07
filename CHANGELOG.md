@@ -1,3 +1,5 @@
+# v0.0.8
+- added local sudo prompt ability for remote execution
 # v0.0.7
 - updated test case in end-to-end test
 # v0.0.6

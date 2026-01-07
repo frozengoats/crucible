@@ -147,5 +147,7 @@ func executeSequence(cwdPath string, configPaths []string, valuesPaths []string,
 		return nil, fmt.Errorf("no hosts specified")
 	}
 
+	config.ConfigInst = configObj
+
 	return executor.RunConcurrentExecutionGroup(sequencePath, configObj, hostIdents)
 }
