@@ -328,6 +328,19 @@ func (ei *ExecutionInstance) Next() (*Action, error) {
 			// push the next subsequence onto the stack, seed any context with the context from the import step
 			var err error
 			var newContext *kvstore.Store
+
+			isWhenSatisfied, err := ei.whenSatisfied(action)
+			if err != nil {
+				return nil, err
+			}
+			if !isWhenSatisfied {
+				context := []any{
+					"host", ei.hostIdent,
+				}
+				log.Info(context, "skipping due to falsey when clause")
+				continue
+			}
+
 			if action.Import != nil && action.Import.Context != nil {
 				evalContext := map[string]any{}
 				for k, v := range action.Import.Context {
@@ -381,6 +394,20 @@ func (ei *ExecutionInstance) Close() error {
 	return ei.executionClient.Close()
 }
 
+func (ei *ExecutionInstance) whenSatisfied(action *Action) (bool, error) {
+	if action.When == "" {
+		return true, nil
+	}
+
+	// evaluate the when condition
+	whenResult, err := eval.Evaluate(action.When, ei.variableLookup, functions.Call)
+	if err != nil {
+		return false, fmt.Errorf("unable to evaluate when clause: %s\n%w", action.When, err)
+	}
+
+	return eval.IsTruthy(whenResult), nil
+}
+
 func (ei *ExecutionInstance) Execute(action *Action) error {
 	context := []any{
 		"host", ei.hostIdent,
@@ -392,18 +419,13 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 		time.Sleep(time.Second * time.Duration(action.Pause.Before))
 	}
 
-	// first, determine if the action should be executed or not
-	if action.When != "" {
-		// evaluate the when condition
-		whenResult, err := eval.Evaluate(action.When, ei.variableLookup, functions.Call)
-		if err != nil {
-			return fmt.Errorf("unable to evaluate when clause: %s\n%w", action.When, err)
-		}
-
-		if !eval.IsTruthy(whenResult) {
-			log.Info(context, "skipping due to falsey when clause")
-			return nil
-		}
+	isWhenSatisfied, err := ei.whenSatisfied(action)
+	if err != nil {
+		return err
+	}
+	if !isWhenSatisfied {
+		log.Info(context, "skipping due to falsey when clause")
+		return nil
 	}
 
 	if action.Iterate != "" {
@@ -436,7 +458,6 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	// this for loop will break immediately unless an until clause is set
 	var stdout []byte
 	var exitCode int
-	var err error
 	untilAttempts := 0
 	for {
 		stdout, exitCode, err = ei.executeSingleAction(action)
@@ -697,6 +718,7 @@ func (ei *ExecutionInstance) executeRemoteCommand(execClient cmdsession.Executio
 		if config.ConfigInst.SudoPrompt {
 			pass := config.ConfigInst.GetSudoPass()
 			if pass == "" {
+				fmt.Printf("enter your password: ")
 				bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
 				if err != nil {
 					return nil, 0, err
