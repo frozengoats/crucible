@@ -1,3 +1,5 @@
+# v0.0.9
+- add visible prompt messaging for sudo
 # v0.0.8
 - added local sudo prompt ability for remote execution
 # v0.0.7

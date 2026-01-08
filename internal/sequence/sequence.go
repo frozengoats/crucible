@@ -23,7 +23,6 @@ import (
 	"github.com/frozengoats/eval"
 	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
-	"golang.org/x/term"
 )
 
 var nameValidator = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -325,8 +324,16 @@ func (ei *ExecutionInstance) Next() (*Action, error) {
 				return action, nil
 			}
 
+			isSatisfied, err := ei.whenSatisfied(action)
+			if !isSatisfied {
+				context := []any{
+					"host", ei.hostIdent,
+				}
+				log.Info(context, "skipping due to falsey when clause")
+				continue
+			}
+
 			// push the next subsequence onto the stack, seed any context with the context from the import step
-			var err error
 			var newContext *kvstore.Store
 			if action.Import != nil && action.Import.Context != nil {
 				evalContext := map[string]any{}
@@ -381,6 +388,20 @@ func (ei *ExecutionInstance) Close() error {
 	return ei.executionClient.Close()
 }
 
+func (ei *ExecutionInstance) whenSatisfied(action *Action) (bool, error) {
+	if action.When == "" {
+		return true, nil
+	}
+
+	// evaluate the when condition
+	whenResult, err := eval.Evaluate(action.When, ei.variableLookup, functions.Call)
+	if err != nil {
+		return false, fmt.Errorf("unable to evaluate when clause: %s\n%w", action.When, err)
+	}
+
+	return eval.IsTruthy(whenResult), nil
+}
+
 func (ei *ExecutionInstance) Execute(action *Action) error {
 	context := []any{
 		"host", ei.hostIdent,
@@ -392,18 +413,14 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 		time.Sleep(time.Second * time.Duration(action.Pause.Before))
 	}
 
-	// first, determine if the action should be executed or not
-	if action.When != "" {
-		// evaluate the when condition
-		whenResult, err := eval.Evaluate(action.When, ei.variableLookup, functions.Call)
-		if err != nil {
-			return fmt.Errorf("unable to evaluate when clause: %s\n%w", action.When, err)
-		}
+	isSatisfied, err := ei.whenSatisfied(action)
+	if err != nil {
+		return err
+	}
 
-		if !eval.IsTruthy(whenResult) {
-			log.Info(context, "skipping due to falsey when clause")
-			return nil
-		}
+	if !isSatisfied {
+		log.Info(context, "skipping due to falsey when clause")
+		return nil
 	}
 
 	if action.Iterate != "" {
@@ -436,7 +453,6 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 	// this for loop will break immediately unless an until clause is set
 	var stdout []byte
 	var exitCode int
-	var err error
 	untilAttempts := 0
 	for {
 		stdout, exitCode, err = ei.executeSingleAction(action)
@@ -573,21 +589,13 @@ func (ei *ExecutionInstance) getExecString(action *Action) ([]string, error) {
 	}
 
 	if action.Sudo {
-		if config.ConfigInst.SudoPrompt {
-			renderedExec = append([]string{"sudo", "-S"}, renderedExec...)
-		} else {
-			renderedExec = append([]string{"sudo"}, renderedExec...)
-		}
+		renderedExec = append([]string{"sudo"}, renderedExec...)
 	} else if action.Su != "" {
 		suUser, err := ei.getSuUser(action)
 		if err != nil {
 			return nil, err
 		}
-		if config.ConfigInst.SudoPrompt {
-			renderedExec = append([]string{"sudo", "-S", "-H", "-u", suUser}, renderedExec...)
-		} else {
-			renderedExec = append([]string{"sudo", "-H", "-u", suUser}, renderedExec...)
-		}
+		renderedExec = append([]string{"sudo", "-H", "-u", suUser}, renderedExec...)
 	}
 
 	return renderedExec, nil
@@ -606,21 +614,13 @@ func (ei *ExecutionInstance) getShellString(action *Action) ([]string, error) {
 		return []string{ei.config.Executor.ShellBinary, "-c", combined}, nil
 	}
 	if action.Sudo {
-		if config.ConfigInst.SudoPrompt {
-			renderedExec = []string{"sudo", "-S", ei.config.Executor.ShellBinary, "-c", combined}
-		} else {
-			renderedExec = []string{"sudo", ei.config.Executor.ShellBinary, "-c", combined}
-		}
+		renderedExec = []string{"sudo", ei.config.Executor.ShellBinary, "-c", combined}
 	} else if action.Su != "" {
 		suUser, err := ei.getSuUser(action)
 		if err != nil {
 			return nil, err
 		}
-		if config.ConfigInst.SudoPrompt {
-			renderedExec = []string{"sudo", "-S", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", combined}
-		} else {
-			renderedExec = []string{"sudo", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", combined}
-		}
+		renderedExec = []string{"sudo", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", combined}
 	}
 
 	return renderedExec, nil
@@ -692,30 +692,6 @@ func (ei *ExecutionInstance) executeRemoteCommand(execClient cmdsession.Executio
 		sess, err := execClient.NewCmdSession()
 		if err != nil {
 			return nil, 0, err
-		}
-
-		if config.ConfigInst.SudoPrompt {
-			pass := config.ConfigInst.GetSudoPass()
-			if pass == "" {
-				bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
-				if err != nil {
-					return nil, 0, err
-				}
-				pass = strings.Trim(string(bytePassword), "\n")
-				config.ConfigInst.SetSudoPass(pass)
-			}
-
-			if stdin != nil {
-				inBytes, err := io.ReadAll(stdin)
-				if err != nil {
-					return nil, 0, err
-				}
-
-				inBytes = append([]byte(pass+"\n"), inBytes...)
-				stdin = bytes.NewReader(inBytes)
-			} else {
-				stdin = bytes.NewReader([]byte(pass + "\n"))
-			}
 		}
 
 		output, err = sess.Execute(stdin, cmd...)
@@ -808,22 +784,13 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 	var execStr []string
 	shellStr := utils.Combine(fmt.Sprintf("cat > %s", dest))
 	if action.Sudo {
-		if config.ConfigInst.SudoPrompt {
-			execStr = []string{"sudo", "-S", ei.config.Executor.ShellBinary, "-c", shellStr}
-		} else {
-			execStr = []string{"sudo", ei.config.Executor.ShellBinary, "-c", shellStr}
-		}
+		execStr = []string{"sudo", ei.config.Executor.ShellBinary, "-c", shellStr}
 	} else if action.Su != "" {
 		suUser, err := ei.getSuUser(action)
 		if err != nil {
 			return nil, 0, err
 		}
-
-		if config.ConfigInst.SudoPrompt {
-			execStr = []string{"sudo", "-S", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", shellStr}
-		} else {
-			execStr = []string{"sudo", "-S", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", shellStr}
-		}
+		execStr = []string{"sudo", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", shellStr}
 	} else {
 		execStr = []string{ei.config.Executor.ShellBinary, "-c", shellStr}
 	}
