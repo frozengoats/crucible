@@ -280,6 +280,8 @@ func (suite *SshTestSuite) TestRsyncNoPassphrase() {
 	err = prepTestEnvironment()
 	suite.NoError(err)
 
+	_ = os.Chmod(privKey, 0o600)
+
 	err = Rsync("test", suite.sshHost, suite.sshPort, privKey, "/tmp/rsync_test", "/tmp/target", "-o", fmt.Sprintf("UserKnownHostsFile=%s", KnownHostsFile))
 	suite.NoError(err)
 }

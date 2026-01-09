@@ -127,5 +127,5 @@ sequence:
 
   - description: create data to be processed by postprocessor
     shell: echo "version 5.0.0"
-    postProcess: split(.stdout, " ")[1]
+    postProcess: split(line(.stdout), " ")[1]
     failWhen: .postProcess != "5.0.0"
