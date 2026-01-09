@@ -334,6 +334,7 @@ func (ei *ExecutionInstance) Next() (*Action, error) {
 				return nil, err
 			}
 			if !isWhenSatisfied {
+				ei.currentExecutionStep += action.SubSequence.CountExecutionSteps()
 				context := []any{
 					"host", ei.hostIdent,
 				}
@@ -718,8 +719,9 @@ func (ei *ExecutionInstance) executeRemoteCommand(execClient cmdsession.Executio
 		if config.ConfigInst.SudoPrompt {
 			pass := config.ConfigInst.GetSudoPass()
 			if pass == "" {
-				fmt.Printf("enter your password: ")
+				fmt.Printf("enter your remote user password: ")
 				bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+				fmt.Printf("\n")
 				if err != nil {
 					return nil, 0, err
 				}
