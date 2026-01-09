@@ -82,6 +82,7 @@ type Action struct {
 	When           string    `yaml:"when"`           // conditional expression which must evaluate to true, in order for the action or loop to be executed
 	FailWhen       string    `yaml:"failWhen"`       // conditional expression which when evaluating to true indicates a failure (failures are otherwise implicit to command execution return codes)
 	IgnoreExitCode bool      `yaml:"ignoreExitCode"` // ignores the exit code of an execution, so that it does not cause the sequence to terminate
+	PostProcess    string    `yaml:"postProcess"`    // evaluable expression which has access to the context (including local), and executes only when the exit code is 0, result is stored .postProcess
 	Until          *Until    `yaml:"until"`          // execute action until the condition evaluates to true
 	Action         *Action   `yaml:"action"`         // action to be executed if an iterable is present as well
 	ParseJson      bool      `yaml:"parseJson"`      // processes the standard output as JSON and makes the data available on the .kv context of the action
@@ -517,6 +518,19 @@ func (ei *ExecutionInstance) Execute(action *Action) error {
 				if err != nil {
 					return err
 				}
+			}
+
+			if action.PostProcess != "" {
+				postProcess, err := eval.Evaluate(action.PostProcess, ei.variableLookup, functions.Call)
+				if err != nil {
+					return fmt.Errorf("unable to evaluate postprocess expression: %w", err)
+				}
+
+				err = ei.ExecContext.Set(postProcess, ImmediateKey, "postProcess")
+				if err != nil {
+					return err
+				}
+				log.Debug(context, "postprocess: %s", fmt.Sprintf("%v", postProcess))
 			}
 		}
 

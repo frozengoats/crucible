@@ -124,3 +124,8 @@ sequence:
 
   - description: verify sub-context data
     failWhen: .Context.mySubCtx.capture.json.secondKey != world
+
+  - description: create data to be processed by postprocessor
+    shell: echo "version 5.0.0"
+    postProcess: split(.stdout, " ")[1]
+    failWhen: .postProcess != "5.0.0"
