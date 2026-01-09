@@ -1,3 +1,5 @@
+# v0.0.10
+- fix bad counting of skipped steps
 # v0.0.9
 - fix invisible prompt
 - add when clause to imported sequences

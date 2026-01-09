@@ -23,8 +23,9 @@ func (p *TypedPassphraseProvider) GetPassphrase() (string, error) {
 		return phrase, nil
 	}
 
-	fmt.Printf("enter your passphrase: ")
+	fmt.Printf("enter your ssh key passphrase: ")
 	bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Printf("\n")
 	if err != nil {
 		return "", err
 	}
