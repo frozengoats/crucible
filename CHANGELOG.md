@@ -1,3 +1,5 @@
+# v0.0.11
+- add postProcess directive which can be used to re-format data in a single step and make it available on the context
 # v0.0.10
 - fix bad counting of skipped steps
 # v0.0.9

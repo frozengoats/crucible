@@ -34,6 +34,10 @@ when: .Context.xyz != .Context.abc
 # of failWhen.
 failWhen: .xyz == "abc"
 
+# postProcess allows for a final parsing stage of anything available on the immediate context (or any other available context),
+# the result of which will be stored on the immediate context under the .postProcess key.  any data type result is permissible
+postProcess: split(line(.stdout), " ")[0]
+
 # when set to true, the exit code of a shell/exec command is not considered.  if false (default), all
 # non-zero exit codes will cause the sequence to terminate
 ignoreExitCode: true

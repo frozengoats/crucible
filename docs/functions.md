@@ -14,9 +14,10 @@
 | lines | returns an array of lines from a multiline string, removing all newline characters | value: string | []any |
 | lower | returns the lowercase version of the provided string | value: string | string |
 | map | iterates an array or map values and executes a function against each element, returning an array<br/>example: `map(.Values.myArray, "b64encode")` | value: any<br/> funcName: string | []any |
-| trim | trims leading and trailing whitespace from string, returning new string | value: string | string |
+| semver | returns an alpha comparable string representation of a semver string, allowing it to be properly compared.  prefix of v is considered irrelevant in the comparison
 | split | returns an array, resulting from splitting a string by a separator value<br/>example: `split(.Context.myString, ",")` | value: string<br/>separator: string | []any |
 | string | returns a string representation of the input data | value: any | string |
+| trim | trims leading and trailing whitespace from string, returning new string | value: string | string |
 | upper | returns the uppercase version of the provided string | value: string | string |
 | values | returns an array of values from a mapping | value: map[string]any | []any |
 | yaml | returns a yaml string representation of the input data | value: any | string |

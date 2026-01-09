@@ -33,7 +33,8 @@ func init() {
 		"string":       toString,
 		"upper":        toUpper,
 		"values":       values,
-		"yaml":         toYamnl,
+		"yaml":         toYaml,
+		"semver":       semver,
 	}
 }
 
@@ -127,7 +128,7 @@ func toJson(args ...any) (any, error) {
 	return string(jBytes), nil
 }
 
-func toYamnl(args ...any) (any, error) {
+func toYaml(args ...any) (any, error) {
 	if len(args) != 1 {
 		return nil, fmt.Errorf("incorrect number of arguments")
 	}
@@ -139,6 +140,34 @@ func toYamnl(args ...any) (any, error) {
 	}
 
 	return string(yBytes), nil
+}
+
+// semver processes a semantic version string and returns a new string which is directly comparable,
+// allowing standard comparison operators to be used in order to alphabetically compare which version
+// is greater, lesser, equal, etc.
+func semver(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("semver takes a single argument")
+	}
+
+	arg := args[0]
+	switch t := arg.(type) {
+	case string:
+		t = strings.TrimPrefix(t, "v")
+		parts := strings.Split(t, ".")
+		if len(parts) > 5 {
+			return nil, fmt.Errorf("this semver string has too many components: %s", t)
+		}
+		for i := len(parts); i < 5; i++ {
+			parts = append(parts, "")
+		}
+		for i, p := range parts {
+			parts[i] = fmt.Sprintf("%09s", p)
+		}
+		return strings.Join(parts, "."), nil
+	default:
+		return nil, fmt.Errorf("semver requires a string argument")
+	}
 }
 
 // keys returns an array of keys from a mapping type
