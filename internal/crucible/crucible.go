@@ -104,6 +104,10 @@ func (r *Recipe) Lint(recipePath string) (bool, error) {
 		}
 	}
 
+	if lintOk {
+		log.Info(nil, "lint of \"%s\" was successful", recipePath)
+	}
+
 	return lintOk, nil
 }
 
@@ -115,6 +119,10 @@ func InitRecipe(name string, sequenceNames []string) error {
 
 	name = strings.ToLower(name)
 	recipeDir := filepath.Join(cwd, name)
+	_, err = os.Stat(recipeDir)
+	if err == nil {
+		return fmt.Errorf("something already exists with the name: %s", name)
+	}
 
 	err = os.Mkdir(recipeDir, 0770)
 	if err != nil {
@@ -140,11 +148,12 @@ func InitRecipe(name string, sequenceNames []string) error {
 
 	for _, seqName := range sequenceNames {
 		seqName = strings.ToLower(seqName)
-		seqPath := filepath.Join(recipeDir, seqsDir, seqName)
+		seqPath := filepath.Join(seqsDir, seqName)
 
 		recipe.Sequences[seqName] = filepath.Join("sequences", seqName)
 
 		seq := &sequence.Sequence{
+			Name:        seqName,
 			Description: "it does this",
 			Sequence:    []*sequence.Action{},
 		}
@@ -174,6 +183,8 @@ func InitRecipe(name string, sequenceNames []string) error {
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("initialized recipe \"%s\"\n", name)
 
 	return nil
 }
