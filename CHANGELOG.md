@@ -1,3 +1,6 @@
+# v0.1.0
+- decoupled config from recipe, leaving recipes truly reusable
+- added extra command tier (lint vs run)
 # v0.0.12
 - updated eval to support early && breakout
 # v0.0.11

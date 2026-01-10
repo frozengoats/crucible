@@ -47,8 +47,6 @@ type UserConfig struct {
 	HomeDir  string
 }
 
-var ConfigInst *Config
-
 type Config struct {
 	// keys are unique host identifiers, though they themselves have no meaning
 	Executor    Executor               `yaml:"executor"`
@@ -60,9 +58,12 @@ type Config struct {
 	Json        bool
 	CwdPath     string
 	sudoPass    string
+	lock        sync.Mutex
 }
 
 func (c *Config) GetSudoPass() string {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	if c.sudoPass == "" {
 		// inject this in if it is being used during a tty-less debugging session and is set
 		sudoPass := os.Getenv("CRUCIBLE_SUDO_PASSWORD")
@@ -74,6 +75,8 @@ func (c *Config) GetSudoPass() string {
 }
 
 func (c *Config) SetSudoPass(value string) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	c.sudoPass = value
 }
 
