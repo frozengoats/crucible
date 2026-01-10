@@ -304,6 +304,16 @@ func (t *Token) evaluate(varLookup VariableLookup, funcCall FunctionCall) (any, 
 			}
 
 			if token.Type == TokenTypeOperator {
+				// if this is an operator token, we want to do an early exit if it's an AND
+				// operation and the previous token creates a breakout condition
+				switch token.Text {
+				case OperatorAnd:
+					// we return the falsey thing immediately before evaluating anything else
+					if !IsTruthy(curVal) {
+						return curVal, nil
+					}
+				}
+
 				prevToken = token
 				continue
 			}

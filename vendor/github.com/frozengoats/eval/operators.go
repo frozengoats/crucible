@@ -148,37 +148,8 @@ func LessThanEqualsOp(a any, b any) (any, error) {
 }
 
 func AndOp(a any, b any) (any, error) {
-	var aIsTrue bool
-	var bIsTrue bool
-	switch aT := a.(type) {
-	case string:
-		aIsTrue = len(aT) > 0
-	case float64:
-		aIsTrue = aT != 0
-	case bool:
-		aIsTrue = a == true
-	case []any:
-		aIsTrue = len(aT) > 0
-	case map[string]any:
-		aIsTrue = len(aT) > 0
-	default:
-		aIsTrue = false
-	}
-
-	switch bT := b.(type) {
-	case string:
-		bIsTrue = len(bT) > 0
-	case float64:
-		bIsTrue = bT != 0
-	case bool:
-		bIsTrue = b == true
-	case []any:
-		aIsTrue = len(bT) > 0
-	case map[string]any:
-		aIsTrue = len(bT) > 0
-	default:
-		bIsTrue = false
-	}
+	var aIsTrue = IsTruthy(a)
+	var bIsTrue = IsTruthy(b)
 
 	if aIsTrue && bIsTrue {
 		return b, nil
@@ -192,37 +163,8 @@ func AndOp(a any, b any) (any, error) {
 }
 
 func OrOp(a any, b any) (any, error) {
-	var aIsTrue bool
-	var bIsTrue bool
-	switch aT := a.(type) {
-	case string:
-		aIsTrue = len(aT) > 0
-	case float64:
-		aIsTrue = aT != 0
-	case bool:
-		aIsTrue = a == true
-	case []any:
-		aIsTrue = len(aT) > 0
-	case map[string]any:
-		aIsTrue = len(aT) > 0
-	default:
-		aIsTrue = false
-	}
-
-	switch bT := b.(type) {
-	case string:
-		bIsTrue = len(bT) > 0
-	case float64:
-		bIsTrue = bT != 0
-	case bool:
-		bIsTrue = b == true
-	case []any:
-		aIsTrue = len(bT) > 0
-	case map[string]any:
-		aIsTrue = len(bT) > 0
-	default:
-		bIsTrue = false
-	}
+	var aIsTrue = IsTruthy(a)
+	var bIsTrue = IsTruthy(b)
 
 	if aIsTrue {
 		return a, nil
