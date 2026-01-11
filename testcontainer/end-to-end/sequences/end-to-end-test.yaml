@@ -30,6 +30,9 @@ sequence:
   - description: verify the when file
     shell: ls -la ~/drop-zone/when.txt
 
+  - description: clean out the drop zone
+    shell: rm -f ~/drop-zone/*
+
   - description: iterate the number set and make some output files
     iterate: .Values.things.numbers
     action:
@@ -44,25 +47,24 @@ sequence:
     # if the file exists, we will hit this evaluation and fail if the data is incorrect
     failWhen: line(.stdout) != "3"
 
-  - description: iterate the number set and make some output files
+  - description: cat the test files to stdout
     iterate: .Values.things.numbers
     action:
       shell: cat ~/drop-zone/{{ .item }}.txt
       failWhen: line(.stdout) != string(.item)
 
   - description: delete iter files using exec
-    exec:
-    - rm
-    - /home/test/drop-zone/*.txt
+    iterate: .Values.things.numbers
+    action:
+      exec:
+      - rm
+      - /home/test/drop-zone/{{ .item }}.txt
 
   - description: put a single .txt file back in the drop zone
     shell: echo "hello" > ~/drop-zone/h.txt
 
   - description: make sure no .txt files exist
-    exec:
-    - ls
-    - -la
-    - ~/drop-zone/*.txt
+    shell: ls -la ~/drop-zone/*.txt
     failWhen: len(lines(.stdout)) != 1
 
   - description: sync bundle to destination

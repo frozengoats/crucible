@@ -10,18 +10,18 @@ sudo rm -f /usr/local/bin/crucible && sudo sh -c "curl -L -o /usr/local/bin/cruc
 ```
 once downloaded, run `crucible --help`
 
-check out the [example](https://github.com/frozengoats/crucible/blob/main/testcontainer/end-to-end) project for in-depth coverage of use cases.
+check out the [example](https://github.com/frozengoats/crucible/blob/main/testcontainer/end-to-end) recipe for in-depth coverage of use cases.
 
-## project structure
-projects are contained within a directory, and consist of a few components.  the core component in any project is the sequence.  a sequence is a series of steps which will be executed in the target environment.  a given project can have multple sequences, each of which perform a distinct function within the target enviornment, however the project itself encapsulates a group of environments and their configuration, both in terms of access, and the sequences which can be executed upon them.
+## recipe structure
+recipes are contained within a directory, and consist of a few components.  the core component in any recipe is the sequence.  a sequence is a series of steps which will be executed in the target environment.  a given recipe can have multple sequences, each of which perform a distinct function within the target enviornment, however the recipe itself encapsulates a group of environments and their configuration, both in terms of access, and the sequences which can be executed upon them.
 
-the following is the recommended directory structure of a project:
+the following is the recommended directory structure of a recipe:
 ```
-my-project/       # the project directory
+my-recipe/        # the recipe directory
   resources/      # contains files and directories which may be copied or templated to the target environment(s)
   sequences/      # contains a collection of .yaml files, each of which represents an execution sequence
-  config.yaml     # contains the project configuration (all the host entries and config), this file is required to be here
   values.yaml     # arbitrary, variable data available to be consumed at execution time, referenced by the sequence
+  recipe.yaml     # defines the recipe metadata as well as publicly available sequences for execution
 ```
 
 ### sequences
@@ -32,7 +32,10 @@ here's an [example](https://github.com/frozengoats/crucible/blob/main/testcontai
 sequences can be reusable if desired, meaning that a sequence can effectively be parameterized, and invoked from another sequence.  this allows for development and reuse of complex patterns which could ultimately give rise to a sequence marketplace.
 
 ### configuration file<a name="config-file"></a>
-the configuration file (`config.yaml`), which must reside directly within the project directory is built from the following [template](https://github.com/frozengoats/crucible/blob/main/docs/config.yaml). not all fields are required, and typically, a minimal configuration is involved, though there are many options for customization, outlined in the template.
+the configuration file (`config.yaml`), which can, but generally should not reside directly within the recipe directory is built from the following [template](https://github.com/frozengoats/crucible/blob/main/docs/config.yaml). not all fields are required, and typically, a minimal configuration is involved, though there are many options for customization, outlined in the template.
+
+### recipe file
+the recipe file (`config.yaml`), which must reside directly within the recipe directory is built from the following [template](https://github.com/frozengoats/crucible/blob/main/docs/recipe.yaml). the recipe file contains metadata about the recipe itself, as well as exposes publicly available sequences for top-level execution.
 
 ## quick anatomy of a config file
 the config file is broken into 2 main parts, the executor, and the collection of hosts.  the executor itself needs no explicit configuration, and can largely go unconfigured for most situations, however the hosts themselves must be configured in order to have a sequence executed upon them.  the basic host configuration in a config file looks like this (see config.yaml template above for details [here](#config-file)):

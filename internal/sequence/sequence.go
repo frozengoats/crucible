@@ -101,6 +101,30 @@ type Action struct {
 	Template *Template `yaml:"template"` // render a template
 }
 
+func (a *Action) Lint(recipePath string) (bool, error) {
+	lintOk := true
+
+	if a.Name != "" {
+		if !nameValidator.MatchString(a.Name) {
+			lintOk = false
+			log.Info(nil, "action name \"%s\" is invalid, must contain only letter, numbers or underscores and cannot begin with a number", a.Name)
+		}
+	}
+
+	if a.SubSequence != nil {
+		ok, err := a.SubSequence.Lint(recipePath)
+		if err != nil {
+			return false, err
+		}
+
+		if !ok {
+			lintOk = false
+		}
+	}
+
+	return lintOk, nil
+}
+
 func (a *Action) Validate() error {
 	if a.Name != "" {
 		if !nameValidator.MatchString(a.Name) {
@@ -109,7 +133,6 @@ func (a *Action) Validate() error {
 	}
 
 	return nil
-
 }
 
 type Sequence struct {
@@ -117,6 +140,29 @@ type Sequence struct {
 	Description string    `yaml:"description"`
 	Sequence    []*Action `yaml:"sequence"`
 	filename    string
+}
+
+func (s *Sequence) Lint(recipePath string) (bool, error) {
+	lintOk := true
+
+	if s.Name != "" {
+		if !nameValidator.MatchString(s.Name) {
+			lintOk = false
+			log.Info(nil, "sequence name \"%s\" must contain only letters, numbers or underscores", s.Name)
+		}
+	}
+
+	for _, action := range s.Sequence {
+		ok, err := action.Lint(recipePath)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			lintOk = false
+		}
+	}
+
+	return lintOk, nil
 }
 
 func (s *Sequence) Validate() error {
@@ -158,7 +204,7 @@ func LoadSequence(cwdPath string, filename string) (*Sequence, error) {
 	b = bytes.ReplaceAll(b, []byte("}}"), []byte("!!>"))
 
 	s := &Sequence{}
-	err = yaml.Unmarshal(b, s)
+	err = yaml.UnmarshalWithOptions(b, s, yaml.DisallowUnknownField())
 	if err != nil {
 		return nil, fmt.Errorf("sequence file %s contained bad yaml data\n%w", filename, err)
 	}
@@ -609,7 +655,7 @@ func (ei *ExecutionInstance) getExecString(action *Action) ([]string, error) {
 	}
 
 	if action.Sudo {
-		if config.ConfigInst.SudoPrompt {
+		if ei.config.SudoPrompt {
 			renderedExec = append([]string{"sudo", "-S"}, renderedExec...)
 		} else {
 			renderedExec = append([]string{"sudo"}, renderedExec...)
@@ -619,7 +665,7 @@ func (ei *ExecutionInstance) getExecString(action *Action) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if config.ConfigInst.SudoPrompt {
+		if ei.config.SudoPrompt {
 			renderedExec = append([]string{"sudo", "-S", "-H", "-u", suUser}, renderedExec...)
 		} else {
 			renderedExec = append([]string{"sudo", "-H", "-u", suUser}, renderedExec...)
@@ -642,7 +688,7 @@ func (ei *ExecutionInstance) getShellString(action *Action) ([]string, error) {
 		return []string{ei.config.Executor.ShellBinary, "-c", combined}, nil
 	}
 	if action.Sudo {
-		if config.ConfigInst.SudoPrompt {
+		if ei.config.SudoPrompt {
 			renderedExec = []string{"sudo", "-S", ei.config.Executor.ShellBinary, "-c", combined}
 		} else {
 			renderedExec = []string{"sudo", ei.config.Executor.ShellBinary, "-c", combined}
@@ -652,7 +698,7 @@ func (ei *ExecutionInstance) getShellString(action *Action) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if config.ConfigInst.SudoPrompt {
+		if ei.config.SudoPrompt {
 			renderedExec = []string{"sudo", "-S", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", combined}
 		} else {
 			renderedExec = []string{"sudo", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", combined}
@@ -730,8 +776,8 @@ func (ei *ExecutionInstance) executeRemoteCommand(execClient cmdsession.Executio
 			return nil, 0, err
 		}
 
-		if config.ConfigInst.SudoPrompt {
-			pass := config.ConfigInst.GetSudoPass()
+		if ei.config.SudoPrompt {
+			pass := ei.config.GetSudoPass()
 			if pass == "" {
 				fmt.Printf("enter your remote user password: ")
 				bytePassword, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -740,7 +786,7 @@ func (ei *ExecutionInstance) executeRemoteCommand(execClient cmdsession.Executio
 					return nil, 0, err
 				}
 				pass = strings.Trim(string(bytePassword), "\n")
-				config.ConfigInst.SetSudoPass(pass)
+				ei.config.SetSudoPass(pass)
 			}
 
 			if stdin != nil {
@@ -846,7 +892,7 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 	var execStr []string
 	shellStr := utils.Combine(fmt.Sprintf("cat > %s", dest))
 	if action.Sudo {
-		if config.ConfigInst.SudoPrompt {
+		if ei.config.SudoPrompt {
 			execStr = []string{"sudo", "-S", ei.config.Executor.ShellBinary, "-c", shellStr}
 		} else {
 			execStr = []string{"sudo", ei.config.Executor.ShellBinary, "-c", shellStr}
@@ -857,7 +903,7 @@ func (ei *ExecutionInstance) template(action *Action) ([]byte, int, error) {
 			return nil, 0, err
 		}
 
-		if config.ConfigInst.SudoPrompt {
+		if ei.config.SudoPrompt {
 			execStr = []string{"sudo", "-S", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", shellStr}
 		} else {
 			execStr = []string{"sudo", "-S", "-H", "-u", suUser, ei.config.Executor.ShellBinary, "-c", shellStr}

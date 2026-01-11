@@ -1,0 +1,7 @@
+# version specifies the version of the recipe
+version: 0.0.1
+
+# sequences enumerate public sequences which can be called from the top level by a crucible user
+sequences:
+  start: sequences/start.yaml
+  stop: seqeunces/stop.yaml

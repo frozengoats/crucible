@@ -97,6 +97,11 @@ func ApplyDefaults(target any) error {
 		f := ve.Field(i)
 		v := typ.Field(i)
 
+		if v.Name[:1] != strings.ToUpper(v.Name[:1]) {
+			// this is a private member, don't look at it
+			continue
+		}
+
 		switch f.Kind() {
 		case reflect.Pointer:
 			if f.IsNil() {
