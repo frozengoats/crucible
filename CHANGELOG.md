@@ -1,3 +1,5 @@
+# v0.1.1
+- provide a dockerfile and publish binary to docker registry for use in makefiles, etc.
 # v0.1.0
 - decoupled config from recipe, leaving recipes truly reusable
 - added extra command tier (lint vs run)

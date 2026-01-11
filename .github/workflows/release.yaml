@@ -33,6 +33,10 @@ jobs:
     - name: locate binary
       run: ls -la ${{ github.workspace }}/bin/*
 
+    - if: ${{ steps.version.outputs.on-parent-branch == 'true' }}
+      name: publish docker image
+      run: make publish
+
     - uses: frozengoats/github-actions/release@release-v1
       with:
         create-release: true
