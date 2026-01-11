@@ -63,7 +63,7 @@ func (c *RunCmd) Run() error {
 		err error
 	)
 
-	if c.Json == true {
+	if c.Json {
 		// disable error logging to the stdout in this particular instance
 		LogErrors = false
 	}
