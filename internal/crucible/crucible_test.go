@@ -155,9 +155,9 @@ func (suite *CrucibleTestSuite) TestEndToEnd() {
 
 	jsonResult, err := ExecuteSequenceFromCwd(
 		location,
-		[]string{extraConfigFile},
+		[]string{extraConfigFile, filepath.Join(location, "config.yaml")},
 		nil,
-		"./sequences/end-to-end-test.yaml",
+		"test",
 		[]string{"testServer"},
 		true,
 		true,

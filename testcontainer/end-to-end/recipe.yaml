@@ -1,0 +1,5 @@
+version: 1.0.0
+name: end2end
+description: end to end test
+sequences:
+  test: sequences/end-to-end-test.yaml
