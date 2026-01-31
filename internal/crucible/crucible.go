@@ -197,22 +197,25 @@ func InitRecipe(name string, sequenceNames []string) error {
 	return nil
 }
 
-func RemoveRecipe(url string) error {
-	imageDescriptor, err := oci.NewImageDescriptor(url)
-	if err != nil {
-		return err
+func RemoveRecipes(urls ...string) error {
+	for _, url := range urls {
+		imageDescriptor, err := oci.NewImageDescriptor(url)
+		if err != nil {
+			return err
+		}
+
+		storagePath, err := imageDescriptor.StoragePath()
+		if err != nil {
+			return err
+		}
+
+		if err = os.RemoveAll(storagePath); err != nil {
+			return err
+		}
+
+		fmt.Printf("%s removed from local download cache\n", url)
 	}
 
-	storagePath, err := imageDescriptor.StoragePath()
-	if err != nil {
-		return err
-	}
-
-	if err = os.RemoveAll(storagePath); err != nil {
-		return err
-	}
-
-	fmt.Printf("%s removed from local download cache\n", url)
 	return nil
 }
 

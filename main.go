@@ -18,11 +18,11 @@ import (
 var Version string = "dev"
 
 type RemoveCmd struct {
-	Url string `arg:"" help:"url of recipe to remove from local cache, in the form of oci://<registry>/<repository>/<name>[:<tag>]"`
+	Url []string `arg:"" help:"url of recipe to remove from local cache, in the form of oci://<registry>/<repository>/<name>[:<tag>]"`
 }
 
 func (c *RemoveCmd) Remove() error {
-	return crucible.RemoveRecipe(c.Url)
+	return crucible.RemoveRecipes(c.Url...)
 }
 
 type ListCmd struct {
