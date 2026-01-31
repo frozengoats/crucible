@@ -164,6 +164,34 @@ variables take the following form:
 # and all other action context variables start with just .
 ```
 
+## publishing and pulling OCI recipes
+crucible can publish recipes to OCI registries, as well as pull them down.  there are a couple of ways crucible can be configured with a remote registry.  the first is via the environment.
+
+```
+OCI_REGISTRY_USERNAME: the username used to login to the OCI registry
+OCI_REGISTRY_PASSWORD: the password or token used to login to the OCI registry
+```
+
+the second way is to configure a credential file.  the credential file must be located at `~/.config/crucible/credentials.json`
+contents look like this:
+```
+<hostname>:
+  username: <registry username>
+  password: <registry password/token>
+```
+
+credential file can be created/modified using the `crucible` cli:
+```
+crucible login docker.io myusername
+```
+
+if items are provided by environment, they will take precedent over a crediential file.
+
+hosted recipes can be downloaded/cached and run directly using an OCI url:
+```
+crucible run -r oci://docker.io/myusername/recipe.myrecipe:1.0.0
+```
+
 ## extra tidbits
 
 For automatic passphrase injection, supply this environment variable with the SSH key passphrase.

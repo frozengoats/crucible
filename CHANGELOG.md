@@ -1,3 +1,6 @@
+# v0.2.0
+- oci artifact publish
+- oci artifact download and run (cache)
 # v0.1.1
 - provide a dockerfile and publish binary to docker registry for use in makefiles, etc.
 # v0.1.0
