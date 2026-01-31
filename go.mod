@@ -11,11 +11,13 @@ require (
 	github.com/frozengoats/eval v0.0.7
 	github.com/frozengoats/kvstore v0.1.9
 	github.com/goccy/go-yaml v1.19.2
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/skeema/knownhosts v1.3.2
 	github.com/stretchr/testify v1.10.0
 	github.com/testcontainers/testcontainers-go v0.37.0
 	golang.org/x/crypto v0.46.0
 	golang.org/x/term v0.39.0
+	oras.land/oras-go/v2 v2.6.0
 )
 
 require (
@@ -47,7 +49,6 @@ require (
 	github.com/moby/term v0.5.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
@@ -64,6 +65,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
 	go.opentelemetry.io/otel/trace v1.35.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.6.0 // indirect
+	golang.org/x/sync v0.14.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250505200425-f936aa4a68b2 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect

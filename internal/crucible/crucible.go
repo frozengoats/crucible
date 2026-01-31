@@ -2,15 +2,16 @@ package crucible
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/frozengoats/crucible/internal/config"
 	"github.com/frozengoats/crucible/internal/executor"
 	"github.com/frozengoats/crucible/internal/log"
+	"github.com/frozengoats/crucible/internal/oci"
 	"github.com/frozengoats/crucible/internal/sequence"
 	"github.com/frozengoats/kvstore"
 	"github.com/goccy/go-yaml"
@@ -24,8 +25,14 @@ type Recipe struct {
 }
 
 var (
-	seqNameValidator = regexp.MustCompile(`^[a-z]+$`)
+	seqNameValidator    = regexp.MustCompile(`^[a-z]+$`)
+	recipeNameValidator = regexp.MustCompile(`^[a-z][a-z_0-9]*$`)
+	versionValidator    = regexp.MustCompile(`^\d\.\d\.\d(\.[0-9a-z]+)?$`)
 )
+
+func validateVersion(versionString string) bool {
+	return versionValidator.MatchString(versionString)
+}
 
 func (r *Recipe) Lint(recipePath string) (bool, error) {
 	lintOk := true
@@ -33,6 +40,12 @@ func (r *Recipe) Lint(recipePath string) (bool, error) {
 	if r.Name == "" {
 		lintOk = false
 		log.Info(nil, "recipe name is not specified")
+	} else {
+		ok := recipeNameValidator.Match([]byte(r.Name))
+		if !ok {
+			lintOk = false
+			log.Info(nil, "recipes name can only contain lowercase alphanumeric characters or underscores and must begin with an alpha character")
+		}
 	}
 
 	if r.Description == "" {
@@ -43,64 +56,41 @@ func (r *Recipe) Lint(recipePath string) (bool, error) {
 	if r.Version == "" {
 		lintOk = false
 		log.Info(nil, "recipe version is not specified")
+	} else {
+		isOk := validateVersion(r.Version)
+		if !isOk {
+			log.Info(nil, "recipe version must follow semantic versioning style (eg. <maj>.<min>.<patch>[.<extra>])")
+		}
 	}
 
 	if len(r.Sequences) == 0 {
 		lintOk = false
 		log.Info(nil, "recipe has no public sequences defined")
-	}
+	} else {
+		for name, seqPath := range r.Sequences {
+			if !seqNameValidator.MatchString(name) {
+				lintOk = false
+				log.Info(nil, "sequence name %s contains characters beyond lower-cased letters", name)
+			}
 
-	vParts := strings.Split(r.Version, ".")
-	if len(vParts) < 3 || len(vParts) > 4 {
-		lintOk = false
-		log.Info(nil, "recipe version must follow semantic versioning style (eg. <maj>.<min>.<patch>[.<extra>])")
-	}
-
-	for i, p := range vParts {
-		if i < 3 {
-			_, err := strconv.ParseInt(p, 10, 64)
+			fullSeqPath := filepath.Join(recipePath, seqPath)
+			_, err := os.Stat(fullSeqPath)
 			if err != nil {
-				lintOk = false
-				log.Info(nil, "recipe version maj/min/patch values must be integers")
-				break
+				return false, fmt.Errorf("sequence %s pointed to bad path %s: %w", name, fullSeqPath, err)
 			}
-			if len(p) > 1 && strings.HasPrefix(p, "0") {
-				lintOk = false
-				log.Info(nil, "recipe version maj/min/patch values cannot contain leading padding zeros")
-				break
+
+			s, err := sequence.LoadSequence(recipePath, seqPath)
+			if err != nil {
+				return false, err
 			}
-		} else {
-			if strings.ContainsAny(p, " \t") || len(p) == 0 {
-				lintOk = false
-				log.Info(nil, "recipe version extra component can't be empty or contain spaces")
-				break
+
+			ok, err := s.Lint(recipePath)
+			if err != nil {
+				return false, fmt.Errorf("sequence at %s contained an error", seqPath)
 			}
-		}
-	}
-
-	for name, seqPath := range r.Sequences {
-		if !seqNameValidator.MatchString(name) {
-			lintOk = false
-			log.Info(nil, "sequence name %s contains characters beyond lower-cased letters", name)
-		}
-
-		fullSeqPath := filepath.Join(recipePath, seqPath)
-		_, err := os.Stat(fullSeqPath)
-		if err != nil {
-			return false, fmt.Errorf("sequence %s pointed to bad path %s: %w", name, fullSeqPath, err)
-		}
-
-		s, err := sequence.LoadSequence(recipePath, seqPath)
-		if err != nil {
-			return false, err
-		}
-
-		ok, err := s.Lint(recipePath)
-		if err != nil {
-			return false, fmt.Errorf("sequence at %s contained an error", seqPath)
-		}
-		if !ok {
-			lintOk = false
+			if !ok {
+				lintOk = false
+			}
 		}
 	}
 
@@ -109,6 +99,24 @@ func (r *Recipe) Lint(recipePath string) (bool, error) {
 	}
 
 	return lintOk, nil
+}
+
+func PublishRecipe(cwdPath string, registryPrefix string) error {
+	recipe, isLinted, err := LintRecipe(cwdPath)
+	if err != nil {
+		return err
+	}
+	if !isLinted {
+		return fmt.Errorf("recipe does not pass linter, please run `crucible lint` and apply the corrective suggestions prior to publishing")
+	}
+
+	desc, err := oci.Publish(cwdPath, registryPrefix, recipe.Name, recipe.Version)
+	if err != nil {
+		return err
+	}
+
+	log.Info(nil, "recipe published and available at %s", desc.Url())
+	return nil
 }
 
 func InitRecipe(name string, sequenceNames []string) error {
@@ -189,25 +197,76 @@ func InitRecipe(name string, sequenceNames []string) error {
 	return nil
 }
 
-func LintRecipe(cwdPath string) (bool, error) {
+func RemoveRecipes(urls ...string) error {
+	for _, url := range urls {
+		imageDescriptor, err := oci.NewImageDescriptor(url)
+		if err != nil {
+			return err
+		}
+
+		storagePath, err := imageDescriptor.StoragePath()
+		if err != nil {
+			return err
+		}
+
+		if err = os.RemoveAll(storagePath); err != nil {
+			return err
+		}
+
+		fmt.Printf("%s removed from local download cache\n", url)
+	}
+
+	return nil
+}
+
+func ListRecipes() error {
+	baseDir, err := oci.GetOciStoragePath()
+	if err != nil {
+		return err
+	}
+	return filepath.WalkDir(baseDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.Name() != "digest.sha" {
+			return nil
+		}
+
+		dir, _ := filepath.Split(path)
+		relPath, err := filepath.Rel(baseDir, dir)
+		if err != nil {
+			return err
+		}
+		repo, tag := filepath.Split(relPath)
+		repo = strings.TrimSuffix(repo, "/")
+
+		fmt.Printf("oci://%s:%s\n", repo, tag)
+
+		return nil
+	})
+}
+
+func LintRecipe(cwdPath string) (*Recipe, bool, error) {
 	recipePath := filepath.Join(cwdPath, "recipe.yaml")
 	_, err := os.Stat(recipePath)
 	if err != nil {
-		return false, fmt.Errorf("unable to locate recipe.yaml, are you sure this is a crucible recipe?")
+		return nil, false, fmt.Errorf("unable to locate recipe.yaml, are you sure this is a crucible recipe?")
 	}
 
 	rBytes, err := os.ReadFile(recipePath)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 
 	recipe := &Recipe{}
 	err = yaml.UnmarshalWithOptions(rBytes, recipe, yaml.DisallowUnknownField())
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 
-	return recipe.Lint(cwdPath)
+	isLinted, err := recipe.Lint(cwdPath)
+	return recipe, isLinted, err
 }
 
 func RecipeInfo(cwdPath string) error {
@@ -250,7 +309,40 @@ func RecipeInfo(cwdPath string) error {
 	return nil
 }
 
+func DownloadRecipe(url string, force bool) error {
+	imageDescriptor, err := oci.NewImageDescriptor(url)
+	if err != nil {
+		return err
+	}
+
+	return oci.Download(imageDescriptor, force)
+}
+
 func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValuesPaths []string, sequence string, targets []string, debug bool, jsonOutput bool) ([]byte, error) {
+	if oci.IsOciUrl(cwdPath) {
+		imageDescriptor, err := oci.NewImageDescriptor(cwdPath)
+		if err != nil {
+			return nil, err
+		}
+
+		digest, err := imageDescriptor.GetDigest()
+		if err != nil {
+			return nil, err
+		}
+
+		if digest == "" {
+			if err = oci.Download(imageDescriptor, false); err != nil {
+				return nil, err
+			}
+		}
+
+		// rewrite the cwd to the downloaded storage path
+		cwdPath, err = imageDescriptor.StoragePath()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	recipePath := filepath.Join(cwdPath, "recipe.yaml")
 	_, err := os.Stat(recipePath)
 	if err != nil {
