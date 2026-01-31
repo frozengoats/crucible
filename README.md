@@ -164,7 +164,7 @@ variables take the following form:
 # and all other action context variables start with just .
 ```
 
-## publishing and pulling OCI recipes
+## OCI based recipes (publishing, downloading and running)
 crucible can publish recipes to OCI registries, as well as pull them down.  there are a couple of ways crucible can be configured with a remote registry.  the first is via the environment.
 
 ```
@@ -186,6 +186,14 @@ crucible login docker.io myusername
 ```
 
 if items are provided by environment, they will take precedent over a crediential file.
+
+publishing a recipe is performed as follows (performed from the recipe directory if unspecified) - recipes must successfully pass the linter before they will be published
+```
+crucible publish <registry>/<repository>
+
+# example - recipe name and version are retrieved from the recipe manifest
+crucible publish docker.io/frozengoats
+```
 
 hosted recipes can be downloaded/cached and run directly using an OCI url:
 ```
