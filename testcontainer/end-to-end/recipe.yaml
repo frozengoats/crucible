@@ -3,3 +3,21 @@ name: end2end
 description: end to end test
 sequences:
   test: sequences/end-to-end-test.yaml
+values:
+  things:
+    numbers: [1, 2, 3, 4, 5]
+    words:
+    - alpha
+    - beta
+    - gamma
+    secret:
+      name: yello
+      data:
+        username: waldo
+        password: yaldo
+  dataDump:
+    firstKey: hello
+    secondKey: world
+    data:
+      x: abc
+      y: 123

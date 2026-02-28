@@ -5,3 +5,7 @@ version: 0.0.1
 sequences:
   start: sequences/start.yaml
   stop: seqeunces/stop.yaml
+
+# a generic mapping with no depth limit, of values which can be referenced in the recipe sequence 
+# templates using the .Values selector
+values: {}

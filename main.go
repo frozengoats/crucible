@@ -137,7 +137,7 @@ func (c *PublishCmd) Run() error {
 type RunCmd struct {
 	RecipeDir string   `short:"r" help:"specify recipe directory or oci:// url (defaults to current directory)"`
 	Configs   []string `short:"c" help:"list of paths to any config yaml overrides, stackable in order of occurrence"`
-	Values    []string `short:"v" help:"list of paths to values files, stackable in order of occurrence (excluding values.yaml)"`
+	Values    []string `short:"v" help:"list of paths to values files, stackable in order of occurrence"`
 	Sequence  string   `arg:"" help:"the name of the sequence to execute"`
 	Targets   []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence (\"all\" for all targets)"`
 	Debug     bool     `short:"d" help:"enable debug mode"`

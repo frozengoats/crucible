@@ -1,3 +1,5 @@
+# v0.3.0
+- move values file to be nested under recipe.yaml in values section
 # v0.2.0
 - oci artifact publish
 - oci artifact download and run (cache)
