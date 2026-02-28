@@ -112,8 +112,8 @@ func (c *LoginCmd) Run() error {
 }
 
 type PublishCmd struct {
-	RecipeDir string `short:"r" help:"change the recipe directory to this location (defaults to cwd)"`
-	Registry  string `arg:"" help:"the full name of the OCI registry (excluding recipe name and version tag)"`
+	Registry    string `arg:"" help:"the full name of the OCI registry (excluding recipe name and version tag)"`
+	TagOverride string `short:"t" help:"override the tag in the recipe file - used to tag dev, major etc. versions"`
 }
 
 func (c *PublishCmd) Run() error {
@@ -122,31 +122,25 @@ func (c *PublishCmd) Run() error {
 		err error
 	)
 
-	if c.RecipeDir != "" {
-		cwd = c.RecipeDir
-	} else {
-		cwd, err = os.Getwd()
-		if err != nil {
-			return err
-		}
+	cwd, err = os.Getwd()
+	if err != nil {
+		return err
 	}
 
-	return crucible.PublishRecipe(cwd, c.Registry)
+	return crucible.PublishRecipe(cwd, c.Registry, c.TagOverride)
 }
 
 type RunCmd struct {
-	RecipeDir string   `short:"r" help:"specify recipe directory or oci:// url (defaults to current directory)"`
-	Configs   []string `short:"c" help:"list of paths to any config yaml overrides, stackable in order of occurrence"`
-	Values    []string `short:"v" help:"list of paths to values files, stackable in order of occurrence"`
-	Sequence  string   `arg:"" help:"the name of the sequence to execute"`
-	Targets   []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence (\"all\" for all targets)"`
-	Debug     bool     `short:"d" help:"enable debug mode"`
-	Version   bool     `help:"display the current version"`
-	Json      bool     `short:"j" help:"output results in json format, suppress normal logging"`
+	Configs  []string `short:"c" help:"list of paths to any config yaml overrides, stackable in order of occurrence"`
+	Values   []string `short:"v" help:"list of paths to values files, stackable in order of occurrence"`
+	Sequence string   `arg:"" help:"the name of the sequence to execute"`
+	Targets  []string `arg:"" help:"named machine targets and/or groups against which to execute the sequence (\"all\" for all targets)"`
+	Debug    bool     `short:"d" help:"enable debug mode"`
+	Version  bool     `help:"display the current version"`
+	Json     bool     `short:"j" help:"output results in json format, suppress normal logging"`
 }
 
 type InfoCmd struct {
-	RecipeDir string
 }
 
 var LogErrors bool = true
@@ -157,13 +151,9 @@ func (c *InfoCmd) Run() error {
 		err error
 	)
 
-	if c.RecipeDir != "" {
-		cwd = c.RecipeDir
-	} else {
-		cwd, err = os.Getwd()
-		if err != nil {
-			return err
-		}
+	cwd, err = os.Getwd()
+	if err != nil {
+		return err
 	}
 
 	return crucible.RecipeInfo(cwd)
@@ -180,13 +170,9 @@ func (c *RunCmd) Run() error {
 		LogErrors = false
 	}
 
-	if c.RecipeDir != "" {
-		cwd = c.RecipeDir
-	} else {
-		cwd, err = os.Getwd()
-		if err != nil {
-			return err
-		}
+	cwd, err = os.Getwd()
+	if err != nil {
+		return err
 	}
 
 	jsonResult, err := crucible.ExecuteSequenceFromCwd(cwd, c.Configs, c.Values, c.Sequence, c.Targets, c.Debug, c.Json)
@@ -210,7 +196,6 @@ func (c *RunCmd) Run() error {
 }
 
 type LintCmd struct {
-	RecipeDir string `short:"r" help:"change the recipe directory to this location (defaults to cwd)"`
 }
 
 func (c *LintCmd) Run() error {
@@ -219,13 +204,9 @@ func (c *LintCmd) Run() error {
 		err error
 	)
 
-	if c.RecipeDir != "" {
-		cwd = c.RecipeDir
-	} else {
-		cwd, err = os.Getwd()
-		if err != nil {
-			return err
-		}
+	cwd, err = os.Getwd()
+	if err != nil {
+		return err
 	}
 
 	_, ok, err := crucible.LintRecipe(cwd)
@@ -241,27 +222,40 @@ func (c *LintCmd) Run() error {
 }
 
 var CLI struct {
-	Init     InitCmd     `cmd:"" help:"initialize a new crucible recipe"`
-	Run      RunCmd      `cmd:"" help:"run a crucible recipe"`
-	Lint     LintCmd     `cmd:"" help:"lint a crucible recipe"`
-	Info     InfoCmd     `cmd:"" help:"display recipe info"`
-	Publish  PublishCmd  `cmd:"" help:"publish recipe to OCI registry"`
-	Download DownloadCmd `cmd:"" help:"download recipe from OCI registry"`
-	Login    LoginCmd    `cmd:"" help:"login to OCI registry"`
-	List     ListCmd     `cmd:"" help:"list downloaded recipes"`
-	Remove   RemoveCmd   `cmd:"" help:"remove recipe from local download cache"`
-	Logout   LogoutCmd   `cmd:"" help:"logout of OCI registry"`
+	Init             InitCmd     `cmd:"" help:"initialize a new crucible recipe"`
+	Run              RunCmd      `cmd:"" help:"run a crucible recipe"`
+	Lint             LintCmd     `cmd:"" help:"lint a crucible recipe"`
+	Info             InfoCmd     `cmd:"" help:"display recipe info"`
+	Publish          PublishCmd  `cmd:"" help:"publish recipe to OCI registry"`
+	Download         DownloadCmd `cmd:"" help:"download recipe from OCI registry"`
+	Login            LoginCmd    `cmd:"" help:"login to OCI registry"`
+	List             ListCmd     `cmd:"" help:"list downloaded recipes"`
+	Remove           RemoveCmd   `cmd:"" help:"remove recipe from local download cache"`
+	Logout           LogoutCmd   `cmd:"" help:"logout of OCI registry"`
+	WorkingDirectory string      `short:"w" help:"change working directory"`
+	Version          bool        `short:"v" help:"display the version of the binary"`
 }
 
 func main() {
 	for _, arg := range os.Args {
-		if arg == "--version" {
+		if arg == "--version" || arg == "-v" {
 			fmt.Printf("%s\n", Version)
 			os.Exit(0)
 		}
 	}
 
 	ctx := kong.Parse(&CLI)
+
+	if CLI.WorkingDirectory != "" {
+		err := os.Chdir(CLI.WorkingDirectory)
+		if err != nil {
+			if LogErrors {
+				log.Error(nil, "%s", err.Error())
+			}
+			os.Exit(1)
+		}
+	}
+
 	err := ctx.Run()
 	if err != nil {
 		if LogErrors {

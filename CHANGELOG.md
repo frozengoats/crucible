@@ -1,3 +1,6 @@
+# v0.4.0
+- remove recipe directory selector, switch to global working directory selector
+- added version publish override
 # v0.3.0
 - move values file to be nested under recipe.yaml in values section
 # v0.2.0

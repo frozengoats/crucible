@@ -102,7 +102,7 @@ func (r *Recipe) Lint(recipePath string) (bool, error) {
 	return lintOk, nil
 }
 
-func PublishRecipe(cwdPath string, registryPrefix string) error {
+func PublishRecipe(cwdPath string, registryPrefix string, tagOverride string) error {
 	recipe, isLinted, err := LintRecipe(cwdPath)
 	if err != nil {
 		return err
@@ -111,7 +111,11 @@ func PublishRecipe(cwdPath string, registryPrefix string) error {
 		return fmt.Errorf("recipe does not pass linter, please run `crucible lint` and apply the corrective suggestions prior to publishing")
 	}
 
-	desc, err := oci.Publish(cwdPath, registryPrefix, recipe.Name, recipe.Version)
+	version := recipe.Version
+	if tagOverride != "" {
+		version = tagOverride
+	}
+	desc, err := oci.Publish(cwdPath, registryPrefix, recipe.Name, version)
 	if err != nil {
 		return err
 	}
