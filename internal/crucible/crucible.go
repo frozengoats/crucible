@@ -22,6 +22,7 @@ type Recipe struct {
 	Name        string            `yaml:"name"`
 	Description string            `yaml:"description"`
 	Sequences   map[string]string `yaml:"sequences"`
+	Values      map[string]any    `yaml:"values"`
 }
 
 var (
@@ -182,12 +183,6 @@ func InitRecipe(name string, sequenceNames []string) error {
 	}
 	recipePath := filepath.Join(recipeDir, "recipe.yaml")
 	err = os.WriteFile(recipePath, recipeBytes, 0660)
-	if err != nil {
-		return err
-	}
-
-	valuesPath := filepath.Join(recipeDir, "values.yaml")
-	err = os.WriteFile(valuesPath, []byte{}, 0660)
 	if err != nil {
 		return err
 	}
@@ -388,7 +383,6 @@ func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValu
 		}
 	}
 
-	mainValuesPath := filepath.Join(cwdPath, "values.yaml")
 	for i, valuesPath := range extraValuesPaths {
 		if !filepath.IsAbs(valuesPath) {
 			absPath, err := filepath.Abs(filepath.Join(cwdPath, valuesPath))
@@ -397,14 +391,6 @@ func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValu
 			}
 			extraValuesPaths[i] = absPath
 		}
-	}
-
-	var valuesPaths []string
-	_, err = os.Stat(mainValuesPath)
-	if err == nil {
-		valuesPaths = append([]string{mainValuesPath}, extraValuesPaths...)
-	} else {
-		valuesPaths = extraValuesPaths
 	}
 
 	if !filepath.IsAbs(sequencePath) {
@@ -421,10 +407,10 @@ func ExecuteSequenceFromCwd(cwdPath string, extraConfigPaths []string, extraValu
 	if len(targets) == 1 && targets[0] == "all" {
 		targets = nil
 	}
-	return executeSequence(cwdPath, extraConfigPaths, valuesPaths, sequencePath, targets, debug, jsonOutput)
+	return executeSequence(recipe, cwdPath, extraConfigPaths, extraValuesPaths, sequencePath, targets, debug, jsonOutput)
 }
 
-func executeSequence(cwdPath string, configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) ([]byte, error) {
+func executeSequence(recipe *Recipe, cwdPath string, configPaths []string, valuesPaths []string, sequencePath string, targets []string, debug bool, jsonOutput bool) ([]byte, error) {
 	configObj, err := config.FromFilePaths(configPaths...)
 	if err != nil {
 		return nil, err
@@ -456,7 +442,11 @@ func executeSequence(cwdPath string, configPaths []string, valuesPaths []string,
 		configObj.Json = true
 	}
 
-	valuesStore := kvstore.NewStore()
+	valuesStore, err := kvstore.FromMapping(recipe.Values)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, valuesPath := range valuesPaths {
 		valuesBytes, err := os.ReadFile(valuesPath)
 		if err != nil {

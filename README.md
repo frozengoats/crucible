@@ -20,7 +20,6 @@ the following is the recommended directory structure of a recipe:
 my-recipe/        # the recipe directory
   resources/      # contains files and directories which may be copied or templated to the target environment(s)
   sequences/      # contains a collection of .yaml files, each of which represents an execution sequence
-  values.yaml     # arbitrary, variable data available to be consumed at execution time, referenced by the sequence
   recipe.yaml     # defines the recipe metadata as well as publicly available sequences for execution
 ```
 
@@ -35,7 +34,7 @@ sequences can be reusable if desired, meaning that a sequence can effectively be
 the configuration file (`config.yaml`), which can, but generally should not reside directly within the recipe directory is built from the following [template](https://github.com/frozengoats/crucible/blob/main/docs/config.yaml). not all fields are required, and typically, a minimal configuration is involved, though there are many options for customization, outlined in the template.
 
 ### recipe file
-the recipe file (`config.yaml`), which must reside directly within the recipe directory is built from the following [template](https://github.com/frozengoats/crucible/blob/main/docs/recipe.yaml). the recipe file contains metadata about the recipe itself, as well as exposes publicly available sequences for top-level execution.
+the recipe file (`config.yaml`), which must reside directly within the recipe directory is built from the following [template](https://github.com/frozengoats/crucible/blob/main/docs/recipe.yaml). the recipe file contains metadata about the recipe itself, as well as exposes publicly available sequences for top-level execution.  additionally the `recipe.yaml` contains a generic key/value store for data used in the templates (overridable by supplemental values files passed to the crucible invocation).
 
 ## quick anatomy of a config file
 the config file is broken into 2 main parts, the executor, and the collection of hosts.  the executor itself needs no explicit configuration, and can largely go unconfigured for most situations, however the hosts themselves must be configured in order to have a sequence executed upon them.  the basic host configuration in a config file looks like this (see config.yaml template above for details [here](#config-file)):
