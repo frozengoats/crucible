@@ -112,7 +112,8 @@ func (c *LoginCmd) Run() error {
 }
 
 type PublishCmd struct {
-	Registry string `arg:"" help:"the full name of the OCI registry (excluding recipe name and version tag)"`
+	Registry    string `arg:"" help:"the full name of the OCI registry (excluding recipe name and version tag)"`
+	TagOverride string `short:"t" help:"override the tag in the recipe file - used to tag dev, major etc. versions"`
 }
 
 func (c *PublishCmd) Run() error {
@@ -126,7 +127,7 @@ func (c *PublishCmd) Run() error {
 		return err
 	}
 
-	return crucible.PublishRecipe(cwd, c.Registry)
+	return crucible.PublishRecipe(cwd, c.Registry, c.TagOverride)
 }
 
 type RunCmd struct {
